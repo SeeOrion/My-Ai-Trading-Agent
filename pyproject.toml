@@ -24,6 +24,10 @@ dev = [
   "pytest-asyncio>=0.25,<1",
   "ruff>=0.9,<1",
 ]
+news = [
+    "beautifulsoup4>=4.12,<5",
+    "httpx>=0.28,<1",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ai_trading_agent"]
