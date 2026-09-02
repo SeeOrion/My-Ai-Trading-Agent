@@ -12,6 +12,10 @@ Presentation → Application → Domain
        Infrastructure adapters
 ```
 
+浏览器是独立交付层：`frontend/`（React/Vite）只能调用版本化 `/api/v1` HTTP 接口；Python
+后端位于 `src/ai_trading_agent`。浏览器不包含数据供应商、LLM 或数据库的密钥。生产环境通过
+Nginx 反向代理同源访问 API，默认不开启跨域；若未来需要不同域名，必须显式配置精确的允许来源。
+
 领域按业务能力拆分：
 
 | 限界上下文 | 职责 | 初始优先级 |
@@ -23,6 +27,42 @@ Presentation → Application → Domain
 | Document Intelligence | 文档解析、OCR 与结构化抽取 | 5 |
 | Journal Analytics | 交易日志导入、归因和行为分析 | 6 |
 | Execution | 模拟账户、风控和可选券商执行 | 最后，默认关闭 |
+
+## 因子库
+
+因子定义是不可执行的声明式元数据：稳定 ID、版本、主题、公式说明、显式输入列、预热期、持有期与说明。
+`FactorRegistry` 拒绝未知输入列；基本面输入必须使用 `fund:` 前缀，避免计算器在不知情时读取隐式字段。
+
+验证记录采用 `(as_of, realized_for)`：`realized_for` 必须晚于因子时点，IC 以每个交易日的横截面
+Spearman 相关系数计算，样本少于 5 个标的不纳入统计。这样与 Vibe-Trading 的防前视原则一致；后续
+分层回测也必须沿用同一时点边界，不可使用未来财报或未来成分股。
+
+当前内置动量、波动率、盈利收益率、ROE 和新闻情绪五个因子，可通过 `GET /api/v1/factors` 查询。
+
+## 个人策略、文档/OCR 与交易日志设计
+
+| 模块 | 写入模型 | 关键约束 | 下一步用例 |
+| --- | --- | --- | --- |
+| Strategy Lab | `strategy_profiles`、`strategy_runs` | 用户策略保存为版本化 JSON 声明；不执行任意 Python 文本 | 校验因子引用、回测、风险报告 |
+| Document Intelligence | `documents` | 原文件以 `storage_key` 引用；SHA-256 去重；提取文本可审计 | 上传、病毒扫描、PDF/OCR、证据定位 |
+| Journal Analytics | `trade_journal_records` | 数量、价格、费用按原始精度保存；导入时间与成交日分离 | CSV 列映射、成交匹配、PnL/行为归因 |
+
+上述表由 `migrations/` 的 Alembic 脚本创建在 PostgreSQL 的 `trading_agent` schema。迁移只能由部署者
+显式执行；本阶段未连接、未创建或修改任何本地 pgAdmin4 数据库。
+
+## 私有服务器拓扑
+
+```text
+Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──> PostgreSQL
+                                                   │
+                                                   ├── Futu OpenD (private network)
+                                                   ├── Tushare / licensed news APIs
+                                                   └── optional LLM gateway
+```
+
+`docker-compose.yml` 使这些服务可独立替换或扩展。数据库仅暴露在 Docker 私网；默认只将 Web UI
+绑定到 `127.0.0.1:8080`，生产服务器应再由已配置 TLS 的反向代理公开访问。迁移服务使用部署时提供的
+`DATABASE_URL`，不会读取本地 `.env` 文件。
 
 ## 当前研究能力
 
@@ -49,5 +89,6 @@ Presentation → Application → Domain
 
 - 研究、数据采集与回测默认只读。
 - API 密钥只来自环境变量或外部秘密管理系统，绝不写入 Git。
+- `.env` 被 Git 忽略且权限应仅限其所有者；自动化与本助手都不读取其中内容。
 - 未来订单必须通过独立的 `Execution` 上下文和风险闸门；研究模块没有下单端口。
 - 所有市场数据以时区明确的 UTC 时间戳表示，展示层再转换为交易所时区。
