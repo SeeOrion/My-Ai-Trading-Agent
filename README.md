@@ -8,10 +8,20 @@
 
 系统默认**不连接券商、不下单**。任何未来实盘能力都必须是显式配置、独立授权并经过风险约束的可选模块。
 
-## 运行测试
+## 使用 uv
+
+本项目由 `uv` 管理依赖和 `.venv`。首次进入项目或依赖变更后执行：
 
 ```bash
-python -m pytest
+uv sync --all-extras
+```
+
+不需要手动 `source .venv/bin/activate`。所有 `uv run` 命令都会自动发现并在
+项目的 `.venv` 中运行；例如：
+
+```bash
+uv run pytest
+uv run ruff check .
 ```
 
 ## 目录
