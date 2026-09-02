@@ -9,4 +9,6 @@ venv/
 !.env.example
 dist/
 build/
+node_modules/
+*.tsbuildinfo
 *.egg-info/
