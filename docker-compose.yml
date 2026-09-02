@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: trading_agent
+      POSTGRES_USER: trading_agent
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in deployment environment}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_agent -d trading_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://trading_agent:${POSTGRES_PASSWORD:?set in deployment environment}@postgres:5432/trading_agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["sh", "-c", "alembic -x database_url=\"$$DATABASE_URL\" upgrade head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://trading_agent:${POSTGRES_PASSWORD:?set in deployment environment}@postgres:5432/trading_agent
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
