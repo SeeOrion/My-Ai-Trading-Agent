@@ -4,6 +4,8 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:0.9.15 /uv /uvx /bin/
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
+COPY alembic.ini ./
+COPY migrations ./migrations
 RUN uv sync --frozen --no-dev --extra api --extra database
 ENV PATH="/app/.venv/bin:$PATH"
 
