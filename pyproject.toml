@@ -13,6 +13,8 @@ authors = [{ name = "SeeOrion" }]
 dependencies = []
 
 [project.optional-dependencies]
+futu = ["futu-api>=9,<10"]
+tushare = ["tushare>=1.4,<2"]
 api = [
   "fastapi>=0.115,<1",
   "uvicorn[standard]>=0.30,<1",
