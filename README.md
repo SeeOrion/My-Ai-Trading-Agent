@@ -10,29 +10,32 @@
 
 ## 使用 uv
 
-本项目由 `uv` 管理依赖和 `.venv`。首次进入项目或依赖变更后执行：
+后端由 `backend/` 内的 `uv` 项目管理依赖和 `.venv`。首次进入项目或依赖变更后执行：
 
 ```bash
+cd backend
 uv sync --all-extras
 ```
 
 不需要手动 `source .venv/bin/activate`。所有 `uv run` 命令都会自动发现并在
-项目的 `.venv` 中运行；例如：
+`backend/.venv` 中运行；例如：
 
 ```bash
+cd backend
 uv run pytest
 uv run ruff check .
 ```
 
 ## 前后端与私有部署
 
-`src/ai_trading_agent` 是 Python 后端（DDD 核心与 FastAPI 交付层），`frontend/` 是独立的
+`backend/src/ai_trading_agent` 是 Python 后端（DDD 核心与 FastAPI 交付层），`frontend/` 是独立的
 React/Vite 工作区。前端只访问 `/api/v1`，不会保存或读取任何数据源、LLM、数据库密钥。
 
 本地开发可分别启动：
 
 ```bash
 # 终端一：后端
+cd backend
 uv run uvicorn ai_trading_agent.presentation.http.app:app --app-dir src --reload --port 8000
 
 # 终端二：前端
@@ -46,14 +49,13 @@ npm run dev
 ## 目录
 
 ```text
-src/ai_trading_agent/
-├── domain/          # 业务规则、实体、值对象与领域服务
-├── application/     # 用例编排和入站/出站端口
-├── infrastructure/  # 数据源、持久化与配置适配器
-└── presentation/    # API、CLI 等交付适配器
-frontend/             # 独立 React 用户界面
-backend/              # 后端容器交付文件
-migrations/           # PostgreSQL Alembic 迁移
+backend/
+├── src/ai_trading_agent/  # Python DDD 后端
+├── tests/                 # 后端测试
+├── migrations/            # PostgreSQL Alembic 迁移
+├── pyproject.toml         # uv 后端依赖定义
+└── Dockerfile              # 后端/迁移镜像
+frontend/                   # 独立 React 用户界面
 ```
 
 完整的边界和增量路线见 [docs/architecture.md](docs/architecture.md)。

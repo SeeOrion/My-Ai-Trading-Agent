@@ -13,7 +13,7 @@ Presentation → Application → Domain
 ```
 
 浏览器是独立交付层：`frontend/`（React/Vite）只能调用版本化 `/api/v1` HTTP 接口；Python
-后端位于 `src/ai_trading_agent`。浏览器不包含数据供应商、LLM 或数据库的密钥。生产环境通过
+后端位于 `backend/src/ai_trading_agent`。浏览器不包含数据供应商、LLM 或数据库的密钥。生产环境通过
 Nginx 反向代理同源访问 API，默认不开启跨域；若未来需要不同域名，必须显式配置精确的允许来源。
 
 领域按业务能力拆分：
@@ -47,7 +47,7 @@ Spearman 相关系数计算，样本少于 5 个标的不纳入统计。这样�
 | Document Intelligence | `documents` | 原文件以 `storage_key` 引用；SHA-256 去重；提取文本可审计 | 上传、病毒扫描、PDF/OCR、证据定位 |
 | Journal Analytics | `trade_journal_records` | 数量、价格、费用按原始精度保存；导入时间与成交日分离 | CSV 列映射、成交匹配、PnL/行为归因 |
 
-上述表由 `migrations/` 的 Alembic 脚本创建在 PostgreSQL 的 `trading_agent` schema。迁移只能由部署者
+上述表由 `backend/migrations/` 的 Alembic 脚本创建在 PostgreSQL 的 `trading_agent` schema。迁移只能由部署者
 显式执行；本阶段未连接、未创建或修改任何本地 pgAdmin4 数据库。
 
 ## 私有服务器拓扑
