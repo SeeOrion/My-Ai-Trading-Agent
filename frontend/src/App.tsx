@@ -1,74 +1,116 @@
-import { useEffect, useState } from "react";
-import { Factor, fetchFactors } from "./api";
+import { FormEvent, useEffect, useState } from "react";
+import {
+  askAssistant, createStrategy, fetchFactors, fetchNews, fetchQuote, fetchResearch,
+  fetchStrategies, Factor, Market, NewsItem, Quote, ResearchReport, Strategy, StrategyInput,
+  updateStrategy
+} from "./api";
 
 type Page = "dashboard" | "markets" | "news" | "research" | "factors" | "strategies" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
-  { id: "dashboard", label: "总览", description: "数据与研究工作台" },
+  { id: "dashboard", label: "总览", description: "AI 研究对话" },
   { id: "markets", label: "行情", description: "A 股 / 港股 / 美股 / ETF" },
-  { id: "news", label: "财经资讯", description: "采集与大模型解读" },
+  { id: "news", label: "财经资讯", description: "Tushare 快讯与情绪" },
   { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
   { id: "factors", label: "因子库", description: "定义、验证、版本" },
-  { id: "strategies", label: "个人策略", description: "注入、验证、回测" },
+  { id: "strategies", label: "个人策略", description: "编辑、注入、版本" },
   { id: "documents", label: "文档 / OCR", description: "研报与证据提取" },
   { id: "journal", label: "交易日志", description: "导入、归因、复盘" },
   { id: "settings", label: "设置", description: "私有部署与连接配置" }
 ];
 
-const capabilityCards = [
-  ["基本面", "已实现领域分析", "指标以公告日对齐"],
-  ["情绪", "已实现新闻分析", "词典基线 + 可选 LLM"],
-  ["资金流", "已实现领域分析", "净流入与大单方向"],
-  ["期权", "已实现领域分析", "到期盈亏与风险边界"]
-];
+const defaultStrategy: StrategyInput = {
+  name: "我的研究策略", thesis: "关注高质量、估值合理且有正向新闻催化的标的。",
+  factor_ids: ["momentum_20d", "return_on_equity"], markets: ["a_share"],
+  max_position_pct: "10", risk_notes: "分散持仓，避免追高。", status: "draft"
+};
 
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [factors, setFactors] = useState<Factor[]>([]);
-  const [factorError, setFactorError] = useState<string | null>(null);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (page !== "factors") return;
-    fetchFactors().then(setFactors).catch((error: Error) => setFactorError(error.message));
-  }, [page]);
+  useEffect(() => { fetchFactors().then(setFactors).catch(() => undefined); }, []);
+  const reloadStrategies = () => fetchStrategies().then(setStrategies).catch((error: Error) => setStrategyError(error.message));
+  useEffect(() => { reloadStrategies(); }, []);
 
   const active = navigation.find((item) => item.id === page)!;
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand"><span>◈</span><div><strong>My AI</strong><small>Trading Agent</small></div></div>
-        <nav aria-label="功能导航">
-          {navigation.map((item) => <button key={item.id} className={page === item.id ? "nav active" : "nav"} onClick={() => setPage(item.id)}>{item.label}</button>)}
-        </nav>
-        <div className="security">私有模式<br /><small>密钥仅在你的环境变量中</small></div>
-      </aside>
-      <section className="content">
-        <header><div><p className="eyebrow">RESEARCH WORKSPACE</p><h1>{active.label}</h1><p>{active.description}</p></div><span className="pill">私有服务器就绪</span></header>
-        {page === "dashboard" && <Dashboard onNavigate={setPage} />}
-        {page === "factors" && <FactorLibrary factors={factors} error={factorError} />}
-        {page !== "dashboard" && page !== "factors" && <ComingSoon page={active.label} />}
-      </section>
-    </main>
-  );
+  return <main className="shell">
+    <aside className="sidebar">
+      <div className="brand"><span>◈</span><div><strong>My AI</strong><small>Trading Agent</small></div></div>
+      <nav aria-label="功能导航">{navigation.map((item) => <button key={item.id} className={page === item.id ? "nav active" : "nav"} onClick={() => setPage(item.id)}>{item.label}</button>)}</nav>
+      <div className="security">私有模式<br /><small>密钥只在后端环境中使用</small></div>
+    </aside>
+    <section className="content">
+      <header><div><p className="eyebrow">RESEARCH WORKSPACE</p><h1>{active.label}</h1><p>{active.description}</p></div><span className="pill">本机服务已连接</span></header>
+      {page === "dashboard" && <Dashboard strategies={strategies} />}
+      {page === "markets" && <MarketWorkspace />}
+      {page === "news" && <NewsWorkspace />}
+      {page === "research" && <ResearchWorkspace />}
+      {page === "factors" && <FactorLibrary factors={factors} />}
+      {page === "strategies" && <StrategyWorkspace factors={factors} strategies={strategies} error={strategyError} reload={reloadStrategies} />}
+      {["documents", "journal", "settings"].includes(page) && <FutureWorkspace page={active.label} />}
+    </section>
+  </main>;
 }
 
-function Dashboard({ onNavigate }: { onNavigate: (page: Page) => void }) {
-  return <>
-    <section className="hero"><div><p className="eyebrow">RESEARCH-FIRST QUANT</p><h2>从数据、新闻到可审计策略</h2><p>前端不会保存 Token；所有供应商连接与模型密钥只由后端私有环境处理。</p></div><button className="primary" onClick={() => onNavigate("factors")}>查看因子库</button></section>
-    <div className="grid four">{capabilityCards.map(([name, status, detail]) => <article className="card" key={name}><p className="muted">{status}</p><h3>{name}</h3><p>{detail}</p></article>)}</div>
-    <section className="roadmap"><h2>工作流入口</h2><div className="grid three">{navigation.slice(1).map((item) => <button className="feature" key={item.id} onClick={() => onNavigate(item.id)}><strong>{item.label}</strong><span>{item.description}</span><b>进入 →</b></button>)}</div></section>
-  </>;
+function TickerFields({ symbol, market, setSymbol, setMarket }: { symbol: string; market: Market; setSymbol: (value: string) => void; setMarket: (value: Market) => void }) {
+  return <div className="form-row"><label>代码<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="如 600519.SH / 0700.HK / AAPL" /></label><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label></div>;
 }
 
-function FactorLibrary({ factors, error }: { factors: Factor[]; error: string | null }) {
-  return <section className="panel"><div className="panel-head"><div><h2>声明式因子注册表</h2><p>公式仅作审计说明，不执行用户输入的任意代码；验证使用同一时点因子与未来收益。</p></div><button className="secondary" onClick={() => location.reload()}>重新加载</button></div>{error && <div className="notice">{error}。请先启动 Python 后端。</div>}
-    {!error && factors.length === 0 && <p className="muted">正在读取后端因子库…</p>}
-    <div className="factor-list">{factors.map((factor) => <article className="factor" key={factor.identifier}><div><span className="tag">{factor.theme}</span><h3>{factor.name}</h3><code>{factor.formula}</code><p>{factor.description}</p></div><dl><div><dt>输入</dt><dd>{factor.columns_required.join(", ")}</dd></div><div><dt>预热</dt><dd>{factor.warmup_bars} bars</dd></div><div><dt>持有期</dt><dd>{factor.horizon_days} 天</dd></div></dl></article>)}</div>
-  </section>;
+function Dashboard({ strategies }: { strategies: Strategy[] }) {
+  const [question, setQuestion] = useState("请结合今日行情、财经资讯和我的策略分析这个标的。");
+  const [symbol, setSymbol] = useState("600519.SH");
+  const [market, setMarket] = useState<Market>("a_share");
+  const [strategyId, setStrategyId] = useState("");
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [status, setStatus] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  async function submit(event: FormEvent) {
+    event.preventDefault(); setLoading(true); setError(null); setAnswer(null);
+    try { const result = await askAssistant({ question, symbol, market, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "AI 请求失败"); }
+    finally { setLoading(false); }
+  }
+  return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>模型收到的是后端采集的行情、财经资讯、研究结果和已选策略；浏览器不会接触任何密钥。</p></div></section>
+    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "向 AI 提问"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer"><p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>研究结果仅供信息与研究参考，不构成投资或交易指令。</small></article>}</section></>;
 }
 
-function ComingSoon({ page }: { page: string }) {
-  return <section className="panel empty"><p className="eyebrow">MODULE BOUNDARY READY</p><h2>{page}工作台</h2><p>页面入口、独立 API 边界和数据库对象已经预留。下一步会连接对应的后端用例，任何写入前均保留审计记录。</p><button className="secondary" disabled>等待后端用例接入</button></section>;
+function MarketWorkspace() {
+  const [symbol, setSymbol] = useState("0700.HK"); const [market, setMarket] = useState<Market>("hong_kong");
+  const [quote, setQuote] = useState<Quote | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setQuote(await fetchQuote(symbol, market)); } catch (reason) { setError(reason instanceof Error ? reason.message : "行情请求失败"); } finally { setLoading(false); } }
+  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><button className="primary" disabled={loading}>{loading ? "读取中…" : "获取最新行情"}</button></form>{error && <div className="notice">{error}</div>}{quote && <div className="metric-grid"><Metric label="最新价" value={`${quote.last_price} ${quote.currency}`} /><Metric label="来源" value={quote.source} /><Metric label="时间" value={new Date(quote.observed_at).toLocaleString()} /><Metric label="成交量" value={quote.volume ?? "—"} /></div>}</section>;
 }
+
+function NewsWorkspace() {
+  const [news, setNews] = useState<NewsItem[]>([]); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  async function load() { setLoading(true); setError(null); try { setNews(await fetchNews()); } catch (reason) { setError(reason instanceof Error ? reason.message : "资讯请求失败"); } finally { setLoading(false); } }
+  return <section className="panel"><div className="panel-head"><div><h2>近 24 小时财经快讯</h2><p>来自已授权 Tushare 源，并显示可解释词典情绪。</p></div><button className="secondary" onClick={load} disabled={loading}>{loading ? "采集中…" : "采集资讯"}</button></div>{error && <div className="notice">{error}</div>}<div className="news-list">{news.map((item) => <article className="news-item" key={`${item.publisher}-${item.published_at}-${item.title}`}><span className={`tag ${item.sentiment}`}>{item.sentiment}</span><h3>{item.title}</h3><p>{item.content}</p><small>{item.publisher} · {new Date(item.published_at).toLocaleString()} · 情绪 {item.sentiment_score}</small></article>)}</div></section>;
+}
+
+function ResearchWorkspace() {
+  const [symbol, setSymbol] = useState("600519.SH"); const [market, setMarket] = useState<Market>("a_share");
+  const [report, setReport] = useState<ResearchReport | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setReport(await fetchResearch(symbol, market)); } catch (reason) { setError(reason instanceof Error ? reason.message : "研究请求失败"); } finally { setLoading(false); } }
+  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><button className="primary" disabled={loading}>{loading ? "分析中…" : "运行研究分析"}</button></form>{error && <div className="notice">{error}</div>}{report && <div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} />{report.notices.map((item) => <div className="notice" key={item}>{item}</div>)}</div>}</section>;
+}
+
+function FactorLibrary({ factors }: { factors: Factor[] }) { return <section className="panel"><div className="panel-head"><div><h2>声明式因子注册表</h2><p>公式仅作审计说明；验证使用同一时点因子与未来收益。</p></div></div><div className="factor-list">{factors.map((factor) => <article className="factor" key={factor.identifier}><div><span className="tag">{factor.theme}</span><h3>{factor.name}</h3><code>{factor.formula}</code><p>{factor.description}</p></div><dl><div><dt>输入</dt><dd>{factor.columns_required.join(", ")}</dd></div><div><dt>预热</dt><dd>{factor.warmup_bars} bars</dd></div><div><dt>持有期</dt><dd>{factor.horizon_days} 天</dd></div></dl></article>)}</div></section>; }
+
+function StrategyWorkspace({ factors, strategies, error, reload }: { factors: Factor[]; strategies: Strategy[]; error: string | null; reload: () => void }) {
+  const [selectedId, setSelectedId] = useState(""); const [form, setForm] = useState<StrategyInput>(defaultStrategy); const [message, setMessage] = useState<string | null>(null);
+  function select(id: string) { setSelectedId(id); const found = strategies.find((item) => item.strategy_id === id); if (found) { const { strategy_id, version, ...input } = found; setForm(input); } }
+  function toggleFactor(identifier: string) { setForm((current) => ({ ...current, factor_ids: current.factor_ids.includes(identifier) ? current.factor_ids.filter((item) => item !== identifier) : [...current.factor_ids, identifier] })); }
+  function toggleMarket(market: Market) { setForm((current) => ({ ...current, markets: current.markets.includes(market) ? current.markets.filter((item) => item !== market) : [...current.markets, market] })); }
+  async function submit(event: FormEvent) { event.preventDefault(); setMessage(null); try { if (selectedId) await updateStrategy(selectedId, form); else { const saved = await createStrategy(form); setSelectedId(saved.strategy_id); } reload(); setMessage("策略已保存，可在首页选择“注入策略”供 AI 研究使用。"); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "策略保存失败"); } }
+  return <section className="strategy-layout"><aside className="strategy-list"><button className="secondary" onClick={() => { setSelectedId(""); setForm(defaultStrategy); }}>新建策略</button>{strategies.map((item) => <button key={item.strategy_id} className={selectedId === item.strategy_id ? "strategy-choice selected" : "strategy-choice"} onClick={() => select(item.strategy_id)}><strong>{item.name}</strong><small>{item.status} · v{item.version}</small></button>)}</aside><section className="panel"><h2>{selectedId ? "编辑个人策略" : "新建个人策略"}</h2><p>策略是声明式研究偏好，不执行任意代码；保存后可被 AI 对话显式注入。</p>{error && <div className="notice">{error}</div>}{message && <div className="success">{message}</div>}<form onSubmit={submit}><label>名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>研究逻辑 / 交易假设<textarea value={form.thesis} onChange={(event) => setForm({ ...form, thesis: event.target.value })} /></label><fieldset><legend>因子</legend>{factors.map((factor) => <label className="check" key={factor.identifier}><input type="checkbox" checked={form.factor_ids.includes(factor.identifier)} onChange={() => toggleFactor(factor.identifier)} />{factor.name}</label>)}</fieldset><fieldset><legend>市场</legend>{(["a_share", "hong_kong", "united_states"] as Market[]).map((item) => <label className="check" key={item}><input type="checkbox" checked={form.markets.includes(item)} onChange={() => toggleMarket(item)} />{item}</label>)}</fieldset><div className="form-row"><label>单标的上限 %<input type="number" min="0.1" max="100" step="0.1" value={form.max_position_pct} onChange={(event) => setForm({ ...form, max_position_pct: event.target.value })} /></label><label>状态<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as StrategyInput["status"] })}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label></div><label>风险约束<textarea value={form.risk_notes} onChange={(event) => setForm({ ...form, risk_notes: event.target.value })} /></label><button className="primary">保存并生成新版本</button></form></section></section>;
+}
+
+function Metric({ label, value }: { label: string; value: string }) { return <article className="card"><p className="muted">{label}</p><h3>{value}</h3></article>; }
+function DataCard({ title, data }: { title: string; data: Record<string, unknown> | null }) { return <article className="data-card"><h3>{title}</h3>{data ? <pre>{JSON.stringify(data, null, 2)}</pre> : <p className="muted">暂无可用数据</p>}</article>; }
+function FutureWorkspace({ page }: { page: string }) { return <section className="panel empty"><p className="eyebrow">NEXT MODULE</p><h2>{page}</h2><p>数据库结构和独立页面边界已准备；下一步接入文件上传/OCR 或交易日志导入用例。</p></section>; }
 
 export default App;
