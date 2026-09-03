@@ -36,7 +36,7 @@ React/Vite 工作区。前端只访问 `/api/v1`，不会保存或读取任何�
 ```bash
 # 终端一：后端
 cd backend
-uv run uvicorn ai_trading_agent.presentation.http.app:app --app-dir src --reload --port 8000
+uv run uvicorn ai_trading_agent.interfaces.api.app:app --app-dir src --reload --port 8000
 
 # 终端二：前端
 cd frontend

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from ai_trading_agent.presentation.http.app import create_app
+from ai_trading_agent.interfaces.api.app import create_app
 
 
 def test_health_endpoint_is_available() -> None:

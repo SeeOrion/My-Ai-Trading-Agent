@@ -7,7 +7,7 @@ Run local development commands from here:
 
 ```bash
 uv sync --all-extras
-uv run uvicorn ai_trading_agent.presentation.http.app:app --app-dir src --reload --port 8000
+uv run uvicorn ai_trading_agent.interfaces.api.app:app --app-dir src --reload --port 8000
 ```
 
 The API is served under `/api/v1`. Migrations are in `migrations/` and must receive a PostgreSQL

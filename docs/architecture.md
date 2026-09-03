@@ -2,15 +2,20 @@
 
 ## 架构原则
 
-项目采用 DDD 与六边形架构。`domain` 不依赖框架、HTTP 客户端、数据库或第三方金融 SDK；`application` 只依赖领域模型和端口；`infrastructure` 实现端口；`presentation` 仅负责 HTTP/CLI 输入输出。
+项目采用 DDD 与六边形架构。`domain` 不依赖框架、HTTP 客户端、数据库或第三方金融 SDK；`application` 只依赖领域模型和端口；`infrastructure` 实现端口；`interfaces` 仅负责 HTTP/CLI 输入输出与交付编排。
 
 ```text
-Presentation → Application → Domain
-                   ↓
-              Ports (interfaces)
-                   ↓
-       Infrastructure adapters
+Interfaces (api / facade / model)
+                ↓
+          Application → Domain
+                ↑         ↑
+       Infrastructure (repo / rpc / config)
 ```
+
+后端目录按职责固定为：`domain/{aggregate,ability,enums,event,query,service}`、
+`infrastructure/{common,config,repo,rpc}` 与 `interfaces/{adapter,api,facade,model,mq,task}`。
+其中 `event/query/service` 与 `mq/task` 是无业务重复实现的扩展边界；现有行情、资讯、研究、策略组合逻辑统一位于
+`interfaces/facade`，HTTP DTO 统一位于 `interfaces/model`。
 
 浏览器是独立交付层：`frontend/`（React/Vite）只能调用版本化 `/api/v1` HTTP 接口；Python
 后端位于 `backend/src/ai_trading_agent`。浏览器不包含数据供应商、LLM 或数据库的密钥。生产环境通过
