@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ai_trading_agent.domain.market import Instrument, Market, Quote
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.enums.market import Market
 
 
 class StaticMarketDataProvider:

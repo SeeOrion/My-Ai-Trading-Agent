@@ -20,28 +20,29 @@ from ai_trading_agent.application.research import (
     AnalyzeFundamentalsHandler,
 )
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
-from ai_trading_agent.domain.factors import DEFAULT_FACTOR_REGISTRY, FactorMetadata
-from ai_trading_agent.domain.market import Instrument, InstrumentType, Market, Quote
-from ai_trading_agent.domain.research import analyze_financial_sentiment
-from ai_trading_agent.domain.strategy import StrategyProfile
-from ai_trading_agent.infrastructure.market_data.config import (
+from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY, FactorMetadata
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
+from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
+from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.config.providers import (
     FutuSettings,
     ProviderConfigurationError,
     TushareSettings,
 )
-from ai_trading_agent.infrastructure.market_data.futu import FutuMarketDataProvider
-from ai_trading_agent.infrastructure.market_data.tushare import TushareMarketDataProvider
-from ai_trading_agent.infrastructure.news.advisor import OpenAICompatibleResearchAdvisor
-from ai_trading_agent.infrastructure.news.config import OpenAICompatibleLLMSettings
-from ai_trading_agent.infrastructure.news.tushare import TushareNewsProvider
-from ai_trading_agent.infrastructure.persistence.database import (
+from ai_trading_agent.infrastructure.repo.database import (
     create_database_engine,
     create_session_factory,
 )
-from ai_trading_agent.infrastructure.persistence.strategies import (
+from ai_trading_agent.infrastructure.repo.strategies import (
     SqlAlchemyStrategyProfileRepository,
 )
-from ai_trading_agent.infrastructure.research.tushare import TushareResearchProvider
+from ai_trading_agent.infrastructure.rpc.futu_market import FutuMarketDataProvider
+from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
+from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
+from ai_trading_agent.infrastructure.rpc.tushare_news import TushareNewsProvider
+from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
 
 DEFAULT_NEWS_SOURCES = ("sina",)
 

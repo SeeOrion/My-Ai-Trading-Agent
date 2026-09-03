@@ -10,7 +10,7 @@ from ai_trading_agent.application.market_data import (
 )
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.enums.market import Market
-from ai_trading_agent.infrastructure.market_data.static import StaticMarketDataProvider
+from ai_trading_agent.infrastructure.rpc.static_market import StaticMarketDataProvider
 
 
 @pytest.mark.asyncio

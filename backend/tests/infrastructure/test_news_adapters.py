@@ -4,15 +4,15 @@ import httpx
 import pytest
 
 from ai_trading_agent.domain.aggregate.news import NewsArticle
-from ai_trading_agent.infrastructure.news.article_fetcher import (
-    AllowlistedArticleContentFetcher,
-    ArticleFetchError,
-)
-from ai_trading_agent.infrastructure.news.config import (
+from ai_trading_agent.infrastructure.config.news import (
     ArticleFetcherSettings,
     OpenAICompatibleLLMSettings,
 )
-from ai_trading_agent.infrastructure.news.llm import OpenAICompatibleNewsAnalyzer
+from ai_trading_agent.infrastructure.rpc.article_content import (
+    AllowlistedArticleContentFetcher,
+    ArticleFetchError,
+)
+from ai_trading_agent.infrastructure.rpc.llm_news import OpenAICompatibleNewsAnalyzer
 
 
 @pytest.mark.asyncio

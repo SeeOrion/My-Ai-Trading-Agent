@@ -8,8 +8,9 @@ from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from ai_trading_agent.domain.market import Instrument, Market, Quote
-from ai_trading_agent.infrastructure.market_data.config import TushareSettings
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.enums.market import Market
+from ai_trading_agent.infrastructure.config.providers import TushareSettings
 
 
 class TushareProviderError(RuntimeError):

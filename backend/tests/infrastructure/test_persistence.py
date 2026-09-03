@@ -1,7 +1,7 @@
 import pytest
 
-from ai_trading_agent.infrastructure.persistence.database import create_database_engine
-from ai_trading_agent.infrastructure.persistence.models import SCHEMA, Base
+from ai_trading_agent.infrastructure.repo.database import create_database_engine
+from ai_trading_agent.infrastructure.repo.models import SCHEMA, Base
 
 
 def test_private_schema_contains_auditable_product_records() -> None:

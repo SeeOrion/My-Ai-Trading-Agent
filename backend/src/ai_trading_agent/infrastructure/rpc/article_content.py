@@ -7,7 +7,7 @@ from urllib.parse import urlsplit
 import httpx
 from bs4 import BeautifulSoup
 
-from ai_trading_agent.infrastructure.news.config import ArticleFetcherSettings
+from ai_trading_agent.infrastructure.config.news import ArticleFetcherSettings
 
 
 class ArticleFetchError(RuntimeError):

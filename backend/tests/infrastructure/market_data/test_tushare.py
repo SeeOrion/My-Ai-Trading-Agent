@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from ai_trading_agent.infrastructure.market_data.tushare import (
+from ai_trading_agent.infrastructure.rpc.tushare_market import (
     TushareProviderError,
     _decimal,
     _market_close,

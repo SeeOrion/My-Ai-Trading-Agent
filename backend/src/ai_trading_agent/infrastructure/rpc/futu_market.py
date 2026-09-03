@@ -8,8 +8,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from ai_trading_agent.domain.market import Instrument, InstrumentType, Market, Quote
-from ai_trading_agent.infrastructure.market_data.config import FutuSettings
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
+from ai_trading_agent.infrastructure.config.providers import FutuSettings
 
 
 class FutuProviderError(RuntimeError):

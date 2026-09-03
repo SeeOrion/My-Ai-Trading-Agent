@@ -6,8 +6,8 @@ import json
 
 import httpx
 
-from ai_trading_agent.domain.news import LLMNewsAssessment, NewsArticle
-from ai_trading_agent.infrastructure.news.config import OpenAICompatibleLLMSettings
+from ai_trading_agent.domain.aggregate.news import LLMNewsAssessment, NewsArticle
+from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 
 
 class LLMNewsAnalysisError(RuntimeError):

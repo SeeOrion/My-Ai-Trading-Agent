@@ -5,8 +5,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai_trading_agent.domain.strategy import StrategyProfile
-from ai_trading_agent.infrastructure.persistence.models import StrategyProfileRecord
+from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.infrastructure.repo.models import StrategyProfileRecord
 
 
 class SqlAlchemyStrategyProfileRepository:

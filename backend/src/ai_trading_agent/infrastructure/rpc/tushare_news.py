@@ -7,8 +7,8 @@ from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ai_trading_agent.domain.news import NewsArticle
-from ai_trading_agent.infrastructure.market_data.config import TushareSettings
+from ai_trading_agent.domain.aggregate.news import NewsArticle
+from ai_trading_agent.infrastructure.config.providers import TushareSettings
 
 
 class TushareNewsProviderError(RuntimeError):

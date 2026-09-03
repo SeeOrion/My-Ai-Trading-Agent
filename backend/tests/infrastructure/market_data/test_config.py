@@ -1,6 +1,6 @@
 import pytest
 
-from ai_trading_agent.infrastructure.market_data.config import (
+from ai_trading_agent.infrastructure.config.providers import (
     FutuSettings,
     ProviderConfigurationError,
     TushareSettings,

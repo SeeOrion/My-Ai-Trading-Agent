@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from ai_trading_agent.infrastructure.news.config import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 
 
 class LLMResearchAdvisorError(RuntimeError):
