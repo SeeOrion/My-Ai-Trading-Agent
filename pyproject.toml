@@ -31,6 +31,7 @@ news = [
 database = [
     "alembic>=1.14,<2",
     "asyncpg>=0.30,<1",
+    "greenlet>=3.1,<4",
     "sqlalchemy>=2.0,<3",
 ]
 
