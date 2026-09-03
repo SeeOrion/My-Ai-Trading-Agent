@@ -17,6 +17,7 @@ futu = ["futu-api>=9,<10"]
 tushare = ["tushare>=1.4,<2"]
 api = [
   "fastapi>=0.115,<1",
+  "python-dotenv>=1.1,<2",
   "uvicorn[standard]>=0.30,<1",
 ]
 dev = [

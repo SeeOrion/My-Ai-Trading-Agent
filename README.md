@@ -46,6 +46,13 @@ npm run dev
 `docker-compose.yml` 为未来私人服务器准备了 PostgreSQL、迁移、后端和静态前端四个独立服务。
 部署时在宿主机的秘密管理或私有环境变量中设置 `POSTGRES_PASSWORD`；不应把它写入仓库或前端构建变量。
 
+## 已配置服务如何进入 UI
+
+本机后端在真正收到行情、资讯、研究或 AI 对话请求时，才从项目根目录的私有 `.env` 装载
+`TUSHARE_TOKEN`、Futu OpenD 地址、LLM 配置和可选的 `DATABASE_URL`。这些值绝不返回给前端。
+当前 UI 已接通行情、财经资讯、研究分析、个人策略编辑/版本保存，以及首页 AI 研究对话；文档/OCR
+和交易日志仍是下一阶段模块。
+
 ## 目录
 
 ```text

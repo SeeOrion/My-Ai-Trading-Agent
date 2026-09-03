@@ -43,12 +43,12 @@ Spearman 相关系数计算，样本少于 5 个标的不纳入统计。这样�
 
 | 模块 | 写入模型 | 关键约束 | 下一步用例 |
 | --- | --- | --- | --- |
-| Strategy Lab | `strategy_profiles`、`strategy_runs` | 用户策略保存为版本化 JSON 声明；不执行任意 Python 文本 | 校验因子引用、回测、风险报告 |
+| Strategy Lab | `strategy_profiles`、`strategy_runs` | 用户策略保存为版本化 JSON 声明；不执行任意 Python 文本 | 已支持 UI 编辑、版本保存与 AI 上下文注入；下一步为回测与风险报告 |
 | Document Intelligence | `documents` | 原文件以 `storage_key` 引用；SHA-256 去重；提取文本可审计 | 上传、病毒扫描、PDF/OCR、证据定位 |
 | Journal Analytics | `trade_journal_records` | 数量、价格、费用按原始精度保存；导入时间与成交日分离 | CSV 列映射、成交匹配、PnL/行为归因 |
 
 上述表由 `backend/migrations/` 的 Alembic 脚本创建在 PostgreSQL 的 `trading_agent` schema。迁移只能由部署者
-显式执行；本阶段未连接、未创建或修改任何本地 pgAdmin4 数据库。
+显式执行；本机开发数据库已创建并迁移，部署环境仍须由部署者提供独立连接串。
 
 ## 私有服务器拓扑
 
@@ -62,7 +62,7 @@ Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──
 
 `docker-compose.yml` 使这些服务可独立替换或扩展。数据库仅暴露在 Docker 私网；默认只将 Web UI
 绑定到 `127.0.0.1:8080`，生产服务器应再由已配置 TLS 的反向代理公开访问。迁移服务使用部署时提供的
-`DATABASE_URL`，不会读取本地 `.env` 文件。
+`DATABASE_URL`。本地后端可从用户维护的 `.env` 装载数据供应商和 LLM 设置，但这些值从不经 API 返回给浏览器。
 
 ## 当前研究能力
 
