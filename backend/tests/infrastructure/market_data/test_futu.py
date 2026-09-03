@@ -4,7 +4,10 @@ import pytest
 
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
+from ai_trading_agent.infrastructure.config.providers import FutuSettings
 from ai_trading_agent.infrastructure.rpc.futu_market import (
+    FutuMarketDataProvider,
+    FutuProviderError,
     FutuSymbolMapper,
     _parse_futu_observed_at,
 )
@@ -33,3 +36,14 @@ def test_us_quote_timestamp_is_normalized_to_utc() -> None:
     parsed = _parse_futu_observed_at("2026-09-02", "09:30:00", Market.UNITED_STATES)
 
     assert parsed == datetime(2026, 9, 2, 13, 30, tzinfo=UTC)
+
+
+def test_futu_rejects_an_unreachable_opend_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refused(*args: object, **kwargs: object) -> None:
+        raise ConnectionRefusedError("refused")
+
+    monkeypatch.setattr("socket.create_connection", refused)
+    provider = FutuMarketDataProvider(FutuSettings())
+
+    with pytest.raises(FutuProviderError, match="OpenD is unreachable"):
+        provider._ensure_gateway_is_reachable()

@@ -8,6 +8,10 @@ from uuid import UUID
 
 from fastapi import FastAPI
 
+from ai_trading_agent.application.a_share_quote_failover import (
+    AShareQuoteFailover,
+    get_single_quote,
+)
 from ai_trading_agent.application.news import CollectLatestNewsHandler
 from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
@@ -19,6 +23,7 @@ from ai_trading_agent.domain.aggregate.research import analyze_financial_sentime
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import (
+    AShareQuoteFailoverSettings,
     FutuSettings,
     ProviderConfigurationError,
     TushareSettings,
@@ -46,30 +51,60 @@ def instrument_from_query(query: QuoteQuery) -> Instrument:
     return Instrument(query.symbol, query.market, query.instrument_type)
 
 
+_a_share_quote_failover: AShareQuoteFailover | None = None
+
+
 async def latest_quote(instrument: Instrument) -> Quote:
     load_runtime_environment()
-    providers = []
     errors: list[str] = []
+    futu_provider = None
     try:
-        providers.append(FutuMarketDataProvider(FutuSettings.from_environment()))
+        futu_provider = FutuMarketDataProvider(FutuSettings.from_environment())
     except ProviderConfigurationError as error:
         errors.append(str(error))
+
     if instrument.market is Market.A_SHARE:
+        tushare_provider = None
         try:
-            providers.append(TushareMarketDataProvider(TushareSettings.from_environment()))
+            tushare_provider = TushareMarketDataProvider(TushareSettings.from_environment())
         except ProviderConfigurationError as error:
             errors.append(str(error))
-    for provider in providers:
-        if not provider.supports(instrument.market):
-            continue
+
+        if futu_provider and tushare_provider:
+            return await _get_a_share_quote(futu_provider, tushare_provider, instrument)
+        for provider in (futu_provider, tushare_provider):
+            if provider is None:
+                continue
+            try:
+                return await get_single_quote(provider, instrument)
+            except Exception as error:
+                errors.append(f"{provider.name}: {error}")
+        raise RuntimeError("; ".join(errors) or "no configured provider supports this market")
+
+    if futu_provider:
         try:
-            quotes = await provider.get_latest_quotes([instrument])
-            if len(quotes) == 1:
-                return quotes[0]
+            return await get_single_quote(futu_provider, instrument)
         except Exception as error:
-            errors.append(f"{provider.name}: {error}")
+            errors.append(f"{futu_provider.name}: {error}")
     detail = "; ".join(errors) or "no configured provider supports this market"
     raise RuntimeError(detail)
+
+
+async def _get_a_share_quote(
+    futu_provider: FutuMarketDataProvider,
+    tushare_provider: TushareMarketDataProvider,
+    instrument: Instrument,
+) -> Quote:
+    global _a_share_quote_failover
+    if _a_share_quote_failover is None:
+        settings = AShareQuoteFailoverSettings.from_environment()
+        _a_share_quote_failover = AShareQuoteFailover(
+            primary=futu_provider,
+            fallback=tushare_provider,
+            primary_timeout_seconds=settings.futu_timeout_seconds,
+            cooldown_seconds=settings.futu_cooldown_seconds,
+        )
+    return await _a_share_quote_failover.get_latest_quote(instrument)
 
 
 async def latest_news(sources: list[str]) -> list[NewsItemResponse]:
