@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from ai_trading_agent.domain.factors import DEFAULT_FACTOR_REGISTRY, FactorMetadata, FactorRegistry
+from ai_trading_agent.domain.ability.factors import (
+    DEFAULT_FACTOR_REGISTRY,
+    FactorMetadata,
+    FactorRegistry,
+)
 
 
 class ListFactorsHandler:

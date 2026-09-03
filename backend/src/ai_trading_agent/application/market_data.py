@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from ai_trading_agent.application.ports import MarketDataProvider
-from ai_trading_agent.domain.market import Instrument, Quote
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 
 
 class MarketDataUnavailableError(RuntimeError):

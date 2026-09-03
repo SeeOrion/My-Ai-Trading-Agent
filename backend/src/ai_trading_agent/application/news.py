@@ -6,13 +6,13 @@ from collections.abc import Iterable
 from datetime import timedelta
 from typing import Protocol
 
-from ai_trading_agent.domain.news import (
+from ai_trading_agent.domain.aggregate.news import (
     LLMNewsAssessment,
     NewsAnalysisResult,
     NewsArticle,
     deduplicate_articles,
 )
-from ai_trading_agent.domain.research import analyze_financial_sentiment
+from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
 
 
 class NewsProvider(Protocol):

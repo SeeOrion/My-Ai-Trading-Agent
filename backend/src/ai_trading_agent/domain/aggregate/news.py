@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
-from ai_trading_agent.domain.research import SentimentAssessment
+from ai_trading_agent.domain.aggregate.research import SentimentAssessment
 
 
 @dataclass(frozen=True, slots=True)

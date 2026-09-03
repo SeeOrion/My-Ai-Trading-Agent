@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ai_trading_agent.domain.market import Instrument
-from ai_trading_agent.domain.research import (
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.aggregate.research import (
     CapitalFlowAssessment,
     CapitalFlowSnapshot,
     FinancialSnapshot,

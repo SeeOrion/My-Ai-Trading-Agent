@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
-from ai_trading_agent.domain.news import NewsArticle
+from ai_trading_agent.domain.aggregate.news import NewsArticle
 from ai_trading_agent.infrastructure.news.article_fetcher import (
     AllowlistedArticleContentFetcher,
     ArticleFetchError,

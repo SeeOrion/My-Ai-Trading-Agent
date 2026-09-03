@@ -4,7 +4,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from ai_trading_agent.domain.market import Instrument, InstrumentType, Market, Quote
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
 
 
 def test_instrument_normalizes_identity_and_market_currency() -> None:

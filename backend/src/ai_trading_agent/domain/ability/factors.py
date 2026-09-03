@@ -9,7 +9,7 @@ from decimal import Decimal
 from math import sqrt
 from re import compile
 
-from ai_trading_agent.domain.market import Instrument
+from ai_trading_agent.domain.aggregate.market import Instrument
 
 _FACTOR_ID = compile(r"^[a-z][a-z0-9_]{2,63}$")
 _PRICE_COLUMNS = frozenset({"open", "high", "low", "close", "volume", "turnover"})

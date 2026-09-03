@@ -7,8 +7,9 @@ from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
 )
-from ai_trading_agent.domain.market import Instrument, Market
-from ai_trading_agent.domain.research import CapitalFlowSnapshot, FinancialSnapshot
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.aggregate.research import CapitalFlowSnapshot, FinancialSnapshot
+from ai_trading_agent.domain.enums.market import Market
 
 
 class FakeResearchProvider:

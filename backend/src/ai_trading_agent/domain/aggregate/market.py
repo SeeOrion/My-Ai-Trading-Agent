@@ -5,23 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from enum import StrEnum
 
-
-class Market(StrEnum):
-    """Markets covered by the first release."""
-
-    A_SHARE = "a_share"
-    HONG_KONG = "hong_kong"
-    UNITED_STATES = "united_states"
-
-
-class InstrumentType(StrEnum):
-    """Tradable instrument classifications needed by research workflows."""
-
-    EQUITY = "equity"
-    ETF = "etf"
-    OPTION = "option"
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
 
 
 @dataclass(frozen=True, slots=True)

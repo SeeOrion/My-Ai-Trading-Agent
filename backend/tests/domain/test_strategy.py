@@ -3,8 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from ai_trading_agent.domain.market import Market
-from ai_trading_agent.domain.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.enums.market import Market
 
 
 def test_strategy_profile_is_versioned_declarative_research_preference() -> None:

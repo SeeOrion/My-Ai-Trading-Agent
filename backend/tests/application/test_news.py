@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from ai_trading_agent.application.news import AnalyzeNewsArticleHandler, CollectLatestNewsHandler
-from ai_trading_agent.domain.news import LLMNewsAssessment, NewsArticle
+from ai_trading_agent.domain.aggregate.news import LLMNewsAssessment, NewsArticle
 
 
 class FakeNewsProvider:

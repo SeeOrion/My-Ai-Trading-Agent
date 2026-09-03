@@ -2,7 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from ai_trading_agent.domain.market import Instrument, InstrumentType, Market
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.market_data.futu import (
     FutuSymbolMapper,
     _parse_futu_observed_at,

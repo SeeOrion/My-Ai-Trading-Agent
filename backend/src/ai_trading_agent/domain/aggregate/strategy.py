@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from ai_trading_agent.domain.market import Market
+from ai_trading_agent.domain.enums.market import Market
 
 
 @dataclass(frozen=True, slots=True)

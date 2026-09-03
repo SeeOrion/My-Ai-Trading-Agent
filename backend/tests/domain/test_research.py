@@ -1,19 +1,22 @@
 from datetime import date
 from decimal import Decimal
 
-from ai_trading_agent.domain.market import Instrument, Market
-from ai_trading_agent.domain.research import (
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.aggregate.research import (
     CapitalFlowSnapshot,
     FinancialSnapshot,
-    OptionKind,
     OptionLeg,
     OptionStrategy,
-    PositionSide,
-    SentimentLabel,
     analyze_financial_sentiment,
     assess_capital_flow,
     assess_fundamentals,
     assess_option_strategy,
+)
+from ai_trading_agent.domain.enums.market import Market
+from ai_trading_agent.domain.enums.research import (
+    OptionKind,
+    PositionSide,
+    SentimentLabel,
 )
 
 

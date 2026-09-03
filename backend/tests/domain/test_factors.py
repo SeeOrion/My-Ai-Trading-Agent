@@ -3,13 +3,14 @@ from decimal import Decimal
 
 import pytest
 
-from ai_trading_agent.domain.factors import (
+from ai_trading_agent.domain.ability.factors import (
     DEFAULT_FACTOR_REGISTRY,
     FactorMetadata,
     FactorReturnPair,
     calculate_factor_diagnostics,
 )
-from ai_trading_agent.domain.market import Instrument, Market
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.enums.market import Market
 
 
 def test_default_factor_registry_has_explicit_input_contracts() -> None:

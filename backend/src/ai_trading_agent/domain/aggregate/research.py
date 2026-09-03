@@ -5,33 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from enum import StrEnum
 
-from ai_trading_agent.domain.market import Instrument
+from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.enums.research import (
+    FlowDirection,
+    OptionKind,
+    PositionSide,
+    SentimentLabel,
+)
 
 ZERO = Decimal("0")
-
-
-class FlowDirection(StrEnum):
-    INFLOW = "inflow"
-    OUTFLOW = "outflow"
-    NEUTRAL = "neutral"
-
-
-class SentimentLabel(StrEnum):
-    POSITIVE = "positive"
-    NEUTRAL = "neutral"
-    NEGATIVE = "negative"
-
-
-class OptionKind(StrEnum):
-    CALL = "call"
-    PUT = "put"
-
-
-class PositionSide(StrEnum):
-    LONG = "long"
-    SHORT = "short"
 
 
 @dataclass(frozen=True, slots=True)

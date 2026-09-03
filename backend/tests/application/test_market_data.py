@@ -8,7 +8,8 @@ from ai_trading_agent.application.market_data import (
     GetLatestQuoteHandler,
     MarketDataUnavailableError,
 )
-from ai_trading_agent.domain.market import Instrument, Market, Quote
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.market_data.static import StaticMarketDataProvider
 
 

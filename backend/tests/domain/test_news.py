@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from ai_trading_agent.domain.news import NewsArticle, deduplicate_articles
+from ai_trading_agent.domain.aggregate.news import NewsArticle, deduplicate_articles
 
 
 def test_deduplication_keeps_newest_publisher_title_pair() -> None:

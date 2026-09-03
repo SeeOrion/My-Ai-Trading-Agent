@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ai_trading_agent.domain.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 
 
 class StrategyProfileRepository(Protocol):
