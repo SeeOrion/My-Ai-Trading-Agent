@@ -11,6 +11,7 @@ from ai_trading_agent.domain.ability.factors import FactorMetadata
 from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.market import Quote
+from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
@@ -111,6 +112,32 @@ class CandidateScreenResponse(BaseModel):
     source: str
     coverage: str
     disclaimer: str
+
+
+class MarketScanResponse(BaseModel):
+    run_id: UUID
+    market: Market
+    source: str
+    status: str
+    started_at: str
+    completed_at: str
+    universe_size: int
+    snapshot_count: int
+    error_message: str | None
+
+    @classmethod
+    def from_domain(cls, run: MarketScanRun) -> MarketScanResponse:
+        return cls(
+            run_id=run.run_id,
+            market=run.market,
+            source=run.source,
+            status=run.status,
+            started_at=run.started_at.isoformat(),
+            completed_at=run.completed_at.isoformat(),
+            universe_size=run.universe_size,
+            snapshot_count=run.snapshot_count,
+            error_message=run.error_message,
+        )
 
 
 class NewsItemResponse(BaseModel):

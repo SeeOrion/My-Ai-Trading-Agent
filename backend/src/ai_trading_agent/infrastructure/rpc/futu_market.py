@@ -145,6 +145,26 @@ class FutuSymbolMapper:
             return f"{exchange}.{number}"
         raise ValueError(f"unsupported market: {instrument.market.value}")
 
+    @staticmethod
+    def from_provider_code(code: str, market: Market) -> Instrument:
+        """Translate a Futu stock-list/snapshot code back to project identity."""
+        if market is Market.HONG_KONG:
+            prefix, separator, number = code.partition(".")
+            if prefix != "HK" or not separator or not number.isdigit():
+                raise ValueError(f"invalid Futu Hong Kong code: {code}")
+            return Instrument(number, market)
+        if market is Market.UNITED_STATES:
+            prefix, separator, symbol = code.partition(".")
+            if prefix != "US" or not separator or not symbol:
+                raise ValueError(f"invalid Futu US code: {code}")
+            return Instrument(symbol, market)
+        if market is Market.A_SHARE:
+            prefix, separator, number = code.partition(".")
+            if prefix not in {"SH", "SZ"} or not separator or not number.isdigit():
+                raise ValueError(f"invalid Futu A-share code: {code}")
+            return Instrument(f"{number}.{prefix}", market)
+        raise ValueError(f"unsupported market: {market.value}")
+
 
 def _parse_futu_observed_at(date_value: str, time_value: str, market: Market) -> datetime:
     timezone = (

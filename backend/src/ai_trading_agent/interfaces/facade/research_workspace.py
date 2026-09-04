@@ -16,6 +16,10 @@ from ai_trading_agent.application.candidates import (
     RankMarketCandidates,
     RankMarketCandidatesHandler,
 )
+from ai_trading_agent.application.market_scans import (
+    GetLatestMarketScanHandler,
+    RunMarketScanHandler,
+)
 from ai_trading_agent.application.news import ResilientLatestNewsHandler
 from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
@@ -30,16 +34,20 @@ from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
     FutuSettings,
+    MarketScanSettings,
     ProviderConfigurationError,
     TencentQuoteSettings,
     TushareSettings,
 )
+from ai_trading_agent.infrastructure.repo.market_scans import SqlAlchemyMarketScanRepository
 from ai_trading_agent.infrastructure.repo.strategies import SqlAlchemyStrategyProfileRepository
 from ai_trading_agent.infrastructure.rpc.akshare_news import AkshareNewsProvider
 from ai_trading_agent.infrastructure.rpc.futu_market import FutuMarketDataProvider
+from ai_trading_agent.infrastructure.rpc.futu_scanner import FutuMarketScanner
 from ai_trading_agent.infrastructure.rpc.tencent_market import TencentQuoteMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
+from ai_trading_agent.infrastructure.rpc.tushare_scanner import TushareMarketScanner
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.model.http import (
@@ -165,6 +173,28 @@ async def today_candidates(
     )
     _candidate_screen_cache[key] = (screen, now)
     return screen, now
+
+
+async def run_market_scan(app: FastAPI, market: Market):  # type: ignore[no-untyped-def]
+    """Compose one market scanner and persist its run without exposing secrets."""
+    load_runtime_environment()
+    settings = MarketScanSettings.from_environment()
+    if market is Market.A_SHARE:
+        provider = TushareMarketScanner(TushareSettings.from_environment())
+    else:
+        provider = FutuMarketScanner(FutuSettings.from_environment(), settings)
+    repository = SqlAlchemyMarketScanRepository(private_session_factory(app))
+    return await RunMarketScanHandler(provider, repository).handle(market)
+
+
+async def latest_market_scan(app: FastAPI, market: Market):  # type: ignore[no-untyped-def]
+    repository = SqlAlchemyMarketScanRepository(private_session_factory(app))
+    return await GetLatestMarketScanHandler(repository).handle(market)
+
+
+async def run_scheduled_market_scans(app: FastAPI) -> None:
+    for market in Market:
+        await run_market_scan(app, market)
 
 
 async def research(query: ResearchRequest) -> ResearchResponse:

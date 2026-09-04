@@ -32,6 +32,20 @@ def test_option_requires_explicit_futu_contract_code() -> None:
         FutuSymbolMapper.to_provider_code(instrument)
 
 
+@pytest.mark.parametrize(
+    ("code", "market", "expected"),
+    [
+        ("HK.00700", Market.HONG_KONG, "00700"),
+        ("US.AAPL", Market.UNITED_STATES, "AAPL"),
+        ("SH.600519", Market.A_SHARE, "600519.SH"),
+    ],
+)
+def test_maps_futu_snapshot_code_back_to_canonical_symbol(
+    code: str, market: Market, expected: str
+) -> None:
+    assert FutuSymbolMapper.from_provider_code(code, market).symbol == expected
+
+
 def test_us_quote_timestamp_is_normalized_to_utc() -> None:
     parsed = _parse_futu_observed_at("2026-09-02", "09:30:00", Market.UNITED_STATES)
 

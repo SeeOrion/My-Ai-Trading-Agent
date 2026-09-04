@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 SCHEMA = "trading_agent"
@@ -106,3 +107,50 @@ class StrategyRunRecord(Base, TimestampedRecord):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+
+
+class MarketScanRunRecord(Base, TimestampedRecord):
+    __tablename__ = "market_scan_runs"
+    __table_args__ = (
+        Index("ix_market_scan_runs_market_started", "market", "started_at"),
+        {"schema": SCHEMA},
+    )
+
+    run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    universe_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class MarketSnapshotRecord(Base):
+    __tablename__ = "market_snapshots"
+    __table_args__ = (
+        Index("ix_market_snapshots_run_symbol", "run_id", "symbol"),
+        {"schema": SCHEMA},
+    )
+
+    snapshot_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey(f"{SCHEMA}.market_scan_runs.run_id", ondelete="CASCADE"), nullable=False
+    )
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    previous_close: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    open_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    high_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    low_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    volume: Mapped[Decimal | None] = mapped_column(Numeric(28, 4))
+    turnover: Mapped[Decimal | None] = mapped_column(Numeric(28, 4))
+    change_percent: Mapped[Decimal | None] = mapped_column(Numeric(16, 8))
+    price_to_earnings: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    price_to_book: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))

@@ -90,6 +90,38 @@ class AShareQuoteFailoverSettings:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class MarketScanSettings:
+    """Bounded controls for manual and scheduled market-wide scans."""
+
+    futu_batch_size: int = 400
+    scheduler_enabled: bool = False
+    interval_seconds: int = 900
+
+    @classmethod
+    def from_environment(cls) -> MarketScanSettings:
+        raw_enabled = os.environ.get("MARKET_SCAN_SCHEDULER_ENABLED", "false").strip().lower()
+        if raw_enabled not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "MARKET_SCAN_SCHEDULER_ENABLED must be true or false"
+            )
+        return cls(
+            futu_batch_size=_bounded_int(
+                os.environ.get("FUTU_SCAN_BATCH_SIZE", "400").strip(),
+                "FUTU_SCAN_BATCH_SIZE",
+                minimum=1,
+                maximum=400,
+            ),
+            scheduler_enabled=raw_enabled == "true",
+            interval_seconds=_bounded_int(
+                os.environ.get("MARKET_SCAN_INTERVAL_SECONDS", "900").strip(),
+                "MARKET_SCAN_INTERVAL_SECONDS",
+                minimum=60,
+                maximum=86_400,
+            ),
+        )
+
+
 def _positive_float(value: str, name: str) -> float:
     try:
         parsed = float(value)
@@ -97,4 +129,14 @@ def _positive_float(value: str, name: str) -> float:
         raise ProviderConfigurationError(f"{name} must be a number") from error
     if not isfinite(parsed) or parsed <= 0:
         raise ProviderConfigurationError(f"{name} must be positive")
+    return parsed
+
+
+def _bounded_int(value: str, name: str, *, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ProviderConfigurationError(f"{name} must be an integer") from error
+    if not minimum <= parsed <= maximum:
+        raise ProviderConfigurationError(f"{name} must be between {minimum} and {maximum}")
     return parsed

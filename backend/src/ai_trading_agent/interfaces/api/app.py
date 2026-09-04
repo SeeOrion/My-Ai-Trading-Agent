@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -16,6 +17,7 @@ from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveS
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.config.providers import MarketScanSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.disciplines import (
@@ -26,9 +28,12 @@ from ai_trading_agent.interfaces.facade.disciplines import (
 from ai_trading_agent.interfaces.facade.research_workspace import (
     get_strategy,
     instrument_from_query,
+    latest_market_scan,
     latest_news,
     latest_quote,
     research,
+    run_market_scan,
+    run_scheduled_market_scans,
     strategy_from_input,
     strategy_repository,
     today_candidates,
@@ -42,6 +47,7 @@ from ai_trading_agent.interfaces.model.http import (
     DisciplineInput,
     DisciplineResponse,
     FactorResponse,
+    MarketScanResponse,
     NewsItemResponse,
     QuoteQuery,
     QuoteResponse,
@@ -50,10 +56,26 @@ from ai_trading_agent.interfaces.model.http import (
     StrategyInput,
     StrategyResponse,
 )
+from ai_trading_agent.interfaces.task.market_scans import MarketScanScheduler
 
 
 def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
-    app = FastAPI(title="My AI Trading Agent API", version="0.2.0")
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):  # type: ignore[no-untyped-def]
+        scheduler: MarketScanScheduler | None = None
+        load_runtime_environment()
+        settings = MarketScanSettings.from_environment()
+        if settings.scheduler_enabled:
+            scheduler = MarketScanScheduler(
+                lambda: run_scheduled_market_scans(application),
+                settings.interval_seconds,
+            )
+            scheduler.start()
+        yield
+        if scheduler is not None:
+            await scheduler.stop()
+
+    app = FastAPI(title="My AI Trading Agent API", version="0.3.0", lifespan=lifespan)
     if cors_origins:
         app.add_middleware(
             CORSMiddleware,
@@ -114,6 +136,33 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
             )
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"今日研究候选不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/market/scans/{market}",
+        response_model=MarketScanResponse,
+        tags=["market"],
+    )
+    async def scan_market(market: Market) -> MarketScanResponse:
+        try:
+            return MarketScanResponse.from_domain(await run_market_scan(app, market))
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"全市场扫描不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/market/scans/{market}/latest",
+        response_model=MarketScanResponse,
+        tags=["market"],
+    )
+    async def get_latest_scan(market: Market) -> MarketScanResponse:
+        try:
+            run = await latest_market_scan(app, market)
+            if run is None:
+                raise HTTPException(status_code=404, detail="尚无该市场扫描记录")
+            return MarketScanResponse.from_domain(run)
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"扫描记录不可用：{error}") from error
 
     @app.get("/api/v1/news", response_model=list[NewsItemResponse], tags=["news"])
     async def get_news(
