@@ -30,6 +30,7 @@ class AShareQuoteFailover:
 
     primary: MarketDataProvider
     fallback: MarketDataProvider
+    secondary_fallbacks: tuple[MarketDataProvider, ...] = ()
     primary_timeout_seconds: float = 5.0
     cooldown_seconds: float = 60.0
     clock: Callable[[], float] = monotonic
@@ -61,11 +62,12 @@ class AShareQuoteFailover:
         else:
             errors.append(f"{self.primary.name}: skipped during cooldown")
 
-        try:
-            return await get_single_quote(self.fallback, instrument)
-        except Exception as error:
-            errors.append(f"{self.fallback.name}: {error}")
-            raise QuoteFailoverError("; ".join(errors)) from error
+        for provider in (self.fallback, *self.secondary_fallbacks):
+            try:
+                return await get_single_quote(provider, instrument)
+            except Exception as error:
+                errors.append(f"{provider.name}: {error}")
+        raise QuoteFailoverError("; ".join(errors))
 
     async def _primary_is_available(self) -> bool:
         async with self._lock:

@@ -56,6 +56,22 @@ class FutuSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class TencentQuoteSettings:
+    """No-credential controls for the experimental public quote fallback."""
+
+    timeout_seconds: float = 5.0
+
+    @classmethod
+    def from_environment(cls) -> TencentQuoteSettings:
+        return cls(
+            timeout_seconds=_positive_float(
+                os.environ.get("TENCENT_QUOTE_TIMEOUT_SECONDS", "5").strip(),
+                "TENCENT_QUOTE_TIMEOUT_SECONDS",
+            )
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AShareQuoteFailoverSettings:
     futu_timeout_seconds: float = 5.0
     futu_cooldown_seconds: float = 60.0
