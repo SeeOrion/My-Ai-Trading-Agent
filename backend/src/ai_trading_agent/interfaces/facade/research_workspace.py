@@ -16,7 +16,7 @@ from ai_trading_agent.application.candidates import (
     RankMarketCandidates,
     RankMarketCandidatesHandler,
 )
-from ai_trading_agent.application.news import CollectLatestNewsHandler
+from ai_trading_agent.application.news import ResilientLatestNewsHandler
 from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
@@ -60,6 +60,7 @@ _candidate_screen_cache: dict[
     tuple[Market, CandidateRanking], tuple[datetime, CandidateScreen]
 ] = {}
 _CANDIDATE_CACHE_TTL = timedelta(minutes=5)
+_news_collector = ResilientLatestNewsHandler(AkshareNewsProvider())
 
 
 async def latest_quote(instrument: Instrument) -> Quote:
@@ -124,7 +125,7 @@ async def _get_a_share_quote(
 
 
 async def latest_news(sources: list[str]) -> list[NewsItemResponse]:
-    articles = await CollectLatestNewsHandler(AkshareNewsProvider()).handle(
+    articles = await _news_collector.handle(
         sources=tuple(source.strip() for source in sources if source.strip()),
         lookback=timedelta(hours=24),
     )

@@ -16,7 +16,7 @@ from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.domain.enums.research import DisciplineStatus
 
-DEFAULT_NEWS_SOURCES = ("eastmoney",)
+DEFAULT_NEWS_SOURCES = ("eastmoney", "sina")
 
 
 class FactorResponse(BaseModel):
