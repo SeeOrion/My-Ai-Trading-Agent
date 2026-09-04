@@ -52,6 +52,18 @@ export interface CandidateScreen {
   disclaimer: string;
 }
 
+export interface MarketScanRun {
+  run_id: string;
+  market: Market;
+  source: string;
+  status: "completed" | "failed";
+  started_at: string;
+  completed_at: string;
+  universe_size: number;
+  snapshot_count: number;
+  error_message: string | null;
+}
+
 export interface NewsItem {
   title: string;
   content: string;
@@ -131,6 +143,10 @@ export const fetchQuote = (symbol: string, market: Market) =>
   request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market }) });
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
   request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
+export const runMarketScan = (market: Market) =>
+  request<MarketScanRun>(`/api/v1/market/scans/${market}`, { method: "POST" });
+export const fetchLatestMarketScan = (market: Market) =>
+  request<MarketScanRun>(`/api/v1/market/scans/${market}/latest`);
 export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney&source=sina");
 export const fetchResearch = (symbol: string, market: Market) =>
   request<ResearchReport>("/api/v1/research", {

@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   askAssistant, createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
-  fetchCandidates, fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies,
-  CandidateRanking, CandidateScreen, Factor, Market, NewsItem, Quote, ResearchReport, Strategy,
-  StrategyInput, updateDiscipline, updateStrategy
+  fetchCandidates, fetchFactors, fetchLatestMarketScan, fetchNews, fetchQuote, fetchResearch,
+  fetchStrategies, runMarketScan, CandidateRanking, CandidateScreen, Factor, Market,
+  MarketScanRun, NewsItem, Quote, ResearchReport, Strategy, StrategyInput, updateDiscipline,
+  updateStrategy
 } from "./api";
 
 type Page = "dashboard" | "markets" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
@@ -108,8 +109,11 @@ function TodayCandidates() {
 function MarketWorkspace() {
   const [symbol, setSymbol] = useState("0700.HK"); const [market, setMarket] = useState<Market>("hong_kong");
   const [quote, setQuote] = useState<Quote | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  const [scan, setScan] = useState<MarketScanRun | null>(null); const [scanMessage, setScanMessage] = useState<string | null>(null); const [scanning, setScanning] = useState(false);
   async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setQuote(await fetchQuote(symbol, market)); } catch (reason) { setError(reason instanceof Error ? reason.message : "行情请求失败"); } finally { setLoading(false); } }
-  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><button className="primary" disabled={loading}>{loading ? "读取中…" : "获取最新行情"}</button></form>{error && <div className="notice">{error}</div>}{quote && <div className="metric-grid"><Metric label="最新价" value={`${quote.last_price} ${quote.currency}`} /><Metric label="来源" value={quote.source} /><Metric label="时间" value={new Date(quote.observed_at).toLocaleString()} /><Metric label="成交量" value={quote.volume ?? "—"} /></div>}</section>;
+  async function runScan() { setScanning(true); setScanMessage(null); try { setScan(await runMarketScan(market)); } catch (reason) { setScanMessage(reason instanceof Error ? reason.message : "扫描请求失败"); } finally { setScanning(false); } }
+  async function loadLatest() { setScanMessage(null); try { setScan(await fetchLatestMarketScan(market)); } catch (reason) { setScanMessage(reason instanceof Error ? reason.message : "暂无扫描记录"); } }
+  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><button className="primary" disabled={loading}>{loading ? "读取中…" : "获取最新行情"}</button></form>{error && <div className="notice">{error}</div>}{quote && <div className="metric-grid"><Metric label="最新价" value={`${quote.last_price} ${quote.currency}`} /><Metric label="来源" value={quote.source} /><Metric label="时间" value={new Date(quote.observed_at).toLocaleString()} /><Metric label="成交量" value={quote.volume ?? "—"} /></div>}<section className="scan-control"><div><p className="eyebrow">MARKET-WIDE SCAN</p><h2>全市场扫描</h2><p>当前市场：{market === "a_share" ? "A 股（Tushare 盘后日线 + 每日指标）" : "港股／美股（Futu OpenD 分批快照）"}。结果保存至本地数据库。</p></div><div className="scan-actions"><button className="secondary" type="button" onClick={loadLatest}>查看最近扫描</button><button className="primary" type="button" onClick={runScan} disabled={scanning}>{scanning ? "扫描中…" : "扫描当前市场"}</button></div>{scanMessage && <div className="notice">{scanMessage}</div>}{scan && <div className={scan.status === "completed" ? "success" : "notice"}>{scan.status === "completed" ? `扫描完成：发现 ${scan.universe_size} 个标的，已保存 ${scan.snapshot_count} 条快照。` : `扫描失败：${scan.error_message ?? "未知错误"}`}<br /><small>{scan.source} · {new Date(scan.completed_at).toLocaleString()}</small></div>}</section></section>;
 }
 
 function NewsWorkspace() {
