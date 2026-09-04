@@ -15,6 +15,19 @@ def test_instrument_normalizes_identity_and_market_currency() -> None:
     assert instrument.currency == "HKD"
 
 
+@pytest.mark.parametrize(
+    ("raw_symbol", "expected"),
+    [
+        ("600737", "600737.SH"),
+        ("000001", "000001.SZ"),
+        ("430047", "430047.BJ"),
+        ("600737.SH", "600737.SH"),
+    ],
+)
+def test_instrument_canonicalizes_a_share_codes(raw_symbol: str, expected: str) -> None:
+    assert Instrument(raw_symbol, Market.A_SHARE).symbol == expected
+
+
 def test_quote_rejects_naive_timestamp() -> None:
     instrument = Instrument("AAPL", Market.UNITED_STATES)
 

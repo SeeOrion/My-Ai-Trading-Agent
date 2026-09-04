@@ -24,6 +24,7 @@ class Instrument:
 
     def __post_init__(self) -> None:
         normalized_symbol = self.symbol.strip().upper()
+        normalized_symbol = _canonical_symbol(normalized_symbol, self.market)
         if not normalized_symbol:
             raise ValueError("symbol must not be empty")
         if any(character.isspace() for character in normalized_symbol):
@@ -76,3 +77,19 @@ def _default_currency(market: Market) -> str:
         Market.HONG_KONG: "HKD",
         Market.UNITED_STATES: "USD",
     }[market]
+
+
+def _canonical_symbol(symbol: str, market: Market) -> str:
+    """Accept a six-digit A-share input while retaining canonical venue codes."""
+    if market is not Market.A_SHARE or not (symbol.isdigit() and len(symbol) == 6):
+        return symbol
+    suffix = {
+        "6": "SH",
+        "5": "SH",
+        "9": "SH",
+        "0": "SZ",
+        "3": "SZ",
+        "4": "BJ",
+        "8": "BJ",
+    }.get(symbol[0])
+    return f"{symbol}.{suffix}" if suffix else symbol

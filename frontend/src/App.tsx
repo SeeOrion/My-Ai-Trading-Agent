@@ -68,7 +68,7 @@ function App() {
 }
 
 function TickerFields({ symbol, market, setSymbol, setMarket }: { symbol: string; market: Market; setSymbol: (value: string) => void; setMarket: (value: Market) => void }) {
-  return <div className="form-row"><label>代码<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="如 600519.SH / 0700.HK / AAPL" /></label><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label></div>;
+  return <div className="form-row"><label>代码<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="A股可填 600519（自动识别交易所）" /></label><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label></div>;
 }
 
 function Dashboard({ strategies }: { strategies: Strategy[] }) {
