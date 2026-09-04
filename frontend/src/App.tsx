@@ -10,7 +10,7 @@ type Page = "dashboard" | "markets" | "news" | "research" | "factors" | "strateg
 const navigation: Array<{ id: Page; label: string; description: string }> = [
   { id: "dashboard", label: "总览", description: "AI 研究对话" },
   { id: "markets", label: "行情", description: "A 股 / 港股 / 美股 / ETF" },
-  { id: "news", label: "财经资讯", description: "Tushare 快讯与情绪" },
+  { id: "news", label: "财经资讯", description: "公开资讯与情绪" },
   { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
   { id: "factors", label: "因子库", description: "定义、验证、版本" },
   { id: "strategies", label: "个人策略", description: "编辑、注入、版本" },
