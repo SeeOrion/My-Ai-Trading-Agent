@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -14,8 +17,13 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 database_url = context.get_x_argument(as_dictionary=True).get("database_url")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+if not database_url:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+    load_dotenv(Path.cwd() / ".env", override=False)
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+if not database_url:
+    raise RuntimeError("DATABASE_URL is required to run database migrations")
+config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline() -> None:
