@@ -26,6 +26,32 @@ export interface Quote {
   volume: string | null;
 }
 
+export type CandidateRanking = "composite" | "momentum" | "balanced_entry";
+
+export interface MarketCandidate {
+  symbol: string;
+  name: string;
+  market: Market;
+  currency: string;
+  last_price: string;
+  change_percent: string | null;
+  score: string;
+  reasons: string[];
+  observed_at: string;
+  source: string;
+}
+
+export interface CandidateScreen {
+  market: Market;
+  ranking: CandidateRanking;
+  candidates: MarketCandidate[];
+  universe_size: number;
+  refreshed_at: string;
+  source: string;
+  coverage: string;
+  disclaimer: string;
+}
+
 export interface NewsItem {
   title: string;
   content: string;
@@ -103,6 +129,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchFactors = () => request<Factor[]>("/api/v1/factors");
 export const fetchQuote = (symbol: string, market: Market) =>
   request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market }) });
+export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
+  request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
 export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney");
 export const fetchResearch = (symbol: string, market: Market) =>
   request<ResearchReport>("/api/v1/research", {

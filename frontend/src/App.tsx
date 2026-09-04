@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   askAssistant, createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
-  fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
-  Quote, ResearchReport, Strategy, StrategyInput, updateDiscipline, updateStrategy
+  fetchCandidates, fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies,
+  CandidateRanking, CandidateScreen, Factor, Market, NewsItem, Quote, ResearchReport, Strategy,
+  StrategyInput, updateDiscipline, updateStrategy
 } from "./api";
 
 type Page = "dashboard" | "markets" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
@@ -85,7 +86,23 @@ function Dashboard({ strategies }: { strategies: Strategy[] }) {
     finally { setLoading(false); }
   }
   return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>模型收到的是后端采集的行情、财经资讯、研究结果和已选策略；浏览器不会接触任何密钥。</p></div></section>
+    <TodayCandidates />
     <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "向 AI 提问"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer"><p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>研究结果仅供信息与研究参考，不构成投资或交易指令。</small></article>}</section></>;
+}
+
+function TodayCandidates() {
+  const [market, setMarket] = useState<Market>("a_share");
+  const [ranking, setRanking] = useState<CandidateRanking>("composite");
+  const [screen, setScreen] = useState<CandidateScreen | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true); setError(null);
+    try { setScreen(await fetchCandidates(market, ranking, true)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "候选池读取失败"); }
+    finally { setLoading(false); }
+  }
+  return <section className="panel candidate-panel"><div className="panel-head"><div><p className="eyebrow">TODAY'S RESEARCH CANDIDATES</p><h2>今日入场研究候选</h2><p>每个市场取 3 只，按公开行情的趋势、成交活跃度和日内价格位置综合筛选。请先刷新，再结合你的研究和纪律复核。</p></div><button className="secondary" onClick={load} disabled={loading}>{loading ? "正在更新…" : "刷新今日候选"}</button></div><div className="candidate-controls"><label>市场<select value={market} onChange={(event) => { setMarket(event.target.value as Market); setScreen(null); }}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label><label>排序方式<select value={ranking} onChange={(event) => { setRanking(event.target.value as CandidateRanking); setScreen(null); }}><option value="composite">综合评分</option><option value="balanced_entry">平衡入场</option><option value="momentum">趋势与活跃度</option></select></label></div>{error && <div className="notice">{error}</div>}{screen && <><div className="candidate-grid">{screen.candidates.map((candidate, index) => <article className="candidate-card" key={candidate.symbol}><div className="candidate-top"><span className="candidate-rank">#{index + 1}</span><span className="pill">综合 {candidate.score}</span></div><h3>{candidate.name}</h3><p className="muted">{candidate.symbol}</p><strong className="candidate-price">{candidate.last_price} {candidate.currency}</strong><span className={Number(candidate.change_percent ?? 0) >= 0 ? "change up" : "change down"}>{candidate.change_percent === null ? "当日变动暂无" : `当日 ${Number(candidate.change_percent).toFixed(2)}%`}</span><ul>{candidate.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></article>)}</div><p className="candidate-meta">已分析 {screen.universe_size} 只样本 · {new Date(screen.refreshed_at).toLocaleString()} · 来源：{screen.source}</p><p className="candidate-disclaimer">{screen.coverage}<br />{screen.disclaimer}</p></>}</section>;
 }
 
 function MarketWorkspace() {
