@@ -13,6 +13,8 @@ from ai_trading_agent.application.disciplines import (
 )
 from ai_trading_agent.application.factors import GetFactorHandler, ListFactorsHandler
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
+from ai_trading_agent.domain.enums.candidates import CandidateRanking
+from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
@@ -29,9 +31,12 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     research,
     strategy_from_input,
     strategy_repository,
+    today_candidates,
 )
 from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
+    CandidateResponse,
+    CandidateScreenResponse,
     ChatRequest,
     ChatResponse,
     DisciplineInput,
@@ -81,6 +86,34 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
             return QuoteResponse.from_domain(await latest_quote(instrument_from_query(query)))
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"行情不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/market/candidates",
+        response_model=CandidateScreenResponse,
+        tags=["market"],
+    )
+    async def get_market_candidates(
+        market: Market,
+        ranking: CandidateRanking = CandidateRanking.COMPOSITE,
+        refresh: bool = False,
+    ) -> CandidateScreenResponse:
+        try:
+            screen, refreshed_at = await today_candidates(market, ranking, refresh=refresh)
+            return CandidateScreenResponse(
+                market=market,
+                ranking=ranking,
+                candidates=[CandidateResponse.from_domain(item) for item in screen.candidates],
+                universe_size=screen.universe_size,
+                refreshed_at=refreshed_at.isoformat(),
+                source="tencent_public",
+                coverage=(
+                    "已筛选腾讯公开行情中的预设高流动性股票研究样本，"
+                    "并非全市场扫描；不包含逐股基本面、资金流、期权或关联新闻。"
+                ),
+                disclaimer="候选仅用于研究与复核，不构成买入、卖出或自动交易指令。",
+            )
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"今日研究候选不可用：{error}") from error
 
     @app.get("/api/v1/news", response_model=list[NewsItemResponse], tags=["news"])
     async def get_news(

@@ -8,9 +8,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_trading_agent.domain.ability.factors import FactorMetadata
+from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.domain.enums.research import DisciplineStatus
 
@@ -69,6 +71,46 @@ class QuoteResponse(BaseModel):
             previous_close=quote.previous_close,
             volume=quote.volume,
         )
+
+
+class CandidateResponse(BaseModel):
+    symbol: str
+    name: str
+    market: Market
+    currency: str
+    last_price: Decimal
+    change_percent: Decimal | None
+    score: Decimal
+    reasons: list[str]
+    observed_at: str
+    source: str
+
+    @classmethod
+    def from_domain(cls, candidate: RankedCandidate) -> CandidateResponse:
+        observation = candidate.observation
+        return cls(
+            symbol=observation.instrument.symbol,
+            name=observation.name,
+            market=observation.instrument.market,
+            currency=observation.instrument.currency,
+            last_price=observation.last_price,
+            change_percent=observation.change_percent,
+            score=candidate.score,
+            reasons=list(candidate.reasons),
+            observed_at=observation.observed_at.isoformat(),
+            source=observation.source,
+        )
+
+
+class CandidateScreenResponse(BaseModel):
+    market: Market
+    ranking: CandidateRanking
+    candidates: list[CandidateResponse]
+    universe_size: int
+    refreshed_at: str
+    source: str
+    coverage: str
+    disclaimer: str
 
 
 class NewsItemResponse(BaseModel):

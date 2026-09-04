@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import FastAPI
@@ -10,6 +10,11 @@ from fastapi import FastAPI
 from ai_trading_agent.application.a_share_quote_failover import (
     AShareQuoteFailover,
     get_single_quote,
+)
+from ai_trading_agent.application.candidates import (
+    CandidateScreen,
+    RankMarketCandidates,
+    RankMarketCandidatesHandler,
 )
 from ai_trading_agent.application.news import CollectLatestNewsHandler
 from ai_trading_agent.application.research import (
@@ -20,6 +25,7 @@ from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
@@ -50,6 +56,10 @@ def instrument_from_query(query: QuoteQuery) -> Instrument:
 
 
 _a_share_quote_failover: AShareQuoteFailover | None = None
+_candidate_screen_cache: dict[
+    tuple[Market, CandidateRanking], tuple[datetime, CandidateScreen]
+] = {}
+_CANDIDATE_CACHE_TTL = timedelta(minutes=5)
 
 
 async def latest_quote(instrument: Instrument) -> Quote:
@@ -133,6 +143,27 @@ async def latest_news(sources: list[str]) -> list[NewsItemResponse]:
             )
         )
     return results
+
+
+async def today_candidates(
+    market: Market,
+    ranking: CandidateRanking,
+    *,
+    refresh: bool = False,
+) -> tuple[CandidateScreen, datetime]:
+    """Return a short-lived public-data candidate screen for one market."""
+    key = (market, ranking)
+    now = datetime.now(UTC)
+    cached = _candidate_screen_cache.get(key)
+    if not refresh and cached is not None and now - cached[0] < _CANDIDATE_CACHE_TTL:
+        return cached[1], cached[0]
+
+    provider = TencentQuoteMarketDataProvider(TencentQuoteSettings.from_environment())
+    screen = await RankMarketCandidatesHandler(provider).handle(
+        RankMarketCandidates(market=market, ranking=ranking)
+    )
+    _candidate_screen_cache[key] = (screen, now)
+    return screen, now
 
 
 async def research(query: ResearchRequest) -> ResearchResponse:

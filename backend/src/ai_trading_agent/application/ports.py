@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Protocol
 
+from ai_trading_agent.domain.aggregate.candidate import CandidateObservation
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.enums.market import Market
 
@@ -19,6 +20,15 @@ class MarketDataProvider(Protocol):
 
     async def get_latest_quotes(self, instruments: Iterable[Instrument]) -> list[Quote]:
         """Return the freshest available quote for every requested instrument."""
+
+
+class MarketCandidateProvider(Protocol):
+    """A bounded, documented market universe suitable for a research screen."""
+
+    name: str
+
+    async def get_candidate_observations(self, market: Market) -> list[CandidateObservation]:
+        """Return the current observations in the provider's research universe."""
 
 
 class Clock(Protocol):
