@@ -23,3 +23,9 @@ class OptionKind(StrEnum):
 class PositionSide(StrEnum):
     LONG = "long"
     SHORT = "short"
+
+
+class DisciplineStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    ARCHIVED = "archived"

@@ -21,3 +21,9 @@ def test_missing_factor_returns_not_found() -> None:
     response = TestClient(create_app()).get("/api/v1/factors/does_not_exist")
 
     assert response.status_code == 404
+
+
+def test_personal_discipline_routes_are_part_of_the_http_contract() -> None:
+    response = TestClient(create_app()).get("/openapi.json")
+
+    assert "/api/v1/disciplines" in response.json()["paths"]

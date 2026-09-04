@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
-  askAssistant, createStrategy, fetchFactors, fetchNews, fetchQuote, fetchResearch,
-  fetchStrategies, Factor, Market, NewsItem, Quote, ResearchReport, Strategy, StrategyInput,
-  updateStrategy
+  askAssistant, createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
+  fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
+  Quote, ResearchReport, Strategy, StrategyInput, updateDiscipline, updateStrategy
 } from "./api";
 
-type Page = "dashboard" | "markets" | "news" | "research" | "factors" | "strategies" | "documents" | "journal" | "settings";
+type Page = "dashboard" | "markets" | "news" | "research" | "factors" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
   { id: "dashboard", label: "总览", description: "AI 研究对话" },
@@ -14,6 +14,7 @@ const navigation: Array<{ id: Page; label: string; description: string }> = [
   { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
   { id: "factors", label: "因子库", description: "定义、验证、版本" },
   { id: "strategies", label: "个人策略", description: "编辑、注入、版本" },
+  { id: "disciplines", label: "个人纪律", description: "价位、仓位与退出规则" },
   { id: "documents", label: "文档 / OCR", description: "研报与证据提取" },
   { id: "journal", label: "交易日志", description: "导入、归因、复盘" },
   { id: "settings", label: "设置", description: "私有部署与连接配置" }
@@ -25,15 +26,25 @@ const defaultStrategy: StrategyInput = {
   max_position_pct: "10", risk_notes: "分散持仓，避免追高。", status: "draft"
 };
 
+const defaultDiscipline: DisciplineInput = {
+  name: "分批交易纪律", symbol: "600519.SH", market: "a_share", instrument_type: "equity",
+  buy_price: "15", add_price: "16", take_profit_price: "16.5", exit_price: "14.5",
+  notes: "仅在自己复核后手动执行；纪律不连接券商，也不会自动下单。", status: "active"
+};
+
 function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [factors, setFactors] = useState<Factor[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  const [disciplines, setDisciplines] = useState<Discipline[]>([]);
+  const [disciplineError, setDisciplineError] = useState<string | null>(null);
 
   useEffect(() => { fetchFactors().then(setFactors).catch(() => undefined); }, []);
   const reloadStrategies = () => fetchStrategies().then(setStrategies).catch((error: Error) => setStrategyError(error.message));
   useEffect(() => { reloadStrategies(); }, []);
+  const reloadDisciplines = () => fetchDisciplines().then(setDisciplines).catch((error: Error) => setDisciplineError(error.message));
+  useEffect(() => { reloadDisciplines(); }, []);
 
   const active = navigation.find((item) => item.id === page)!;
   return <main className="shell">
@@ -50,6 +61,7 @@ function App() {
       {page === "research" && <ResearchWorkspace />}
       {page === "factors" && <FactorLibrary factors={factors} />}
       {page === "strategies" && <StrategyWorkspace factors={factors} strategies={strategies} error={strategyError} reload={reloadStrategies} />}
+      {page === "disciplines" && <DisciplineWorkspace disciplines={disciplines} error={disciplineError} reload={reloadDisciplines} />}
       {["documents", "journal", "settings"].includes(page) && <FutureWorkspace page={active.label} />}
     </section>
   </main>;
@@ -107,6 +119,13 @@ function StrategyWorkspace({ factors, strategies, error, reload }: { factors: Fa
   function toggleMarket(market: Market) { setForm((current) => ({ ...current, markets: current.markets.includes(market) ? current.markets.filter((item) => item !== market) : [...current.markets, market] })); }
   async function submit(event: FormEvent) { event.preventDefault(); setMessage(null); try { if (selectedId) await updateStrategy(selectedId, form); else { const saved = await createStrategy(form); setSelectedId(saved.strategy_id); } reload(); setMessage("策略已保存，可在首页选择“注入策略”供 AI 研究使用。"); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "策略保存失败"); } }
   return <section className="strategy-layout"><aside className="strategy-list"><button className="secondary" onClick={() => { setSelectedId(""); setForm(defaultStrategy); }}>新建策略</button>{strategies.map((item) => <button key={item.strategy_id} className={selectedId === item.strategy_id ? "strategy-choice selected" : "strategy-choice"} onClick={() => select(item.strategy_id)}><strong>{item.name}</strong><small>{item.status} · v{item.version}</small></button>)}</aside><section className="panel"><h2>{selectedId ? "编辑个人策略" : "新建个人策略"}</h2><p>策略是声明式研究偏好，不执行任意代码；保存后可被 AI 对话显式注入。</p>{error && <div className="notice">{error}</div>}{message && <div className="success">{message}</div>}<form onSubmit={submit}><label>名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>研究逻辑 / 交易假设<textarea value={form.thesis} onChange={(event) => setForm({ ...form, thesis: event.target.value })} /></label><fieldset><legend>因子</legend>{factors.map((factor) => <label className="check" key={factor.identifier}><input type="checkbox" checked={form.factor_ids.includes(factor.identifier)} onChange={() => toggleFactor(factor.identifier)} />{factor.name}</label>)}</fieldset><fieldset><legend>市场</legend>{(["a_share", "hong_kong", "united_states"] as Market[]).map((item) => <label className="check" key={item}><input type="checkbox" checked={form.markets.includes(item)} onChange={() => toggleMarket(item)} />{item}</label>)}</fieldset><div className="form-row"><label>单标的上限 %<input type="number" min="0.1" max="100" step="0.1" value={form.max_position_pct} onChange={(event) => setForm({ ...form, max_position_pct: event.target.value })} /></label><label>状态<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as StrategyInput["status"] })}><option value="draft">draft</option><option value="active">active</option><option value="archived">archived</option></select></label></div><label>风险约束<textarea value={form.risk_notes} onChange={(event) => setForm({ ...form, risk_notes: event.target.value })} /></label><button className="primary">保存并生成新版本</button></form></section></section>;
+}
+
+function DisciplineWorkspace({ disciplines, error, reload }: { disciplines: Discipline[]; error: string | null; reload: () => void }) {
+  const [selectedId, setSelectedId] = useState(""); const [form, setForm] = useState<DisciplineInput>(defaultDiscipline); const [message, setMessage] = useState<string | null>(null);
+  function select(id: string) { setSelectedId(id); const found = disciplines.find((item) => item.discipline_id === id); if (found) { const { discipline_id, version, ...input } = found; setForm(input); } }
+  async function submit(event: FormEvent) { event.preventDefault(); setMessage(null); try { if (selectedId) await updateDiscipline(selectedId, form); else { const saved = await createDiscipline(form); setSelectedId(saved.discipline_id); } reload(); setMessage("个人纪律已保存。它仅用于提醒与复核，不会自动发出交易指令。"); } catch (reason) { setMessage(reason instanceof Error ? reason.message : "个人纪律保存失败"); } }
+  return <section className="discipline-layout"><aside className="strategy-list"><button className="secondary" onClick={() => { setSelectedId(""); setForm(defaultDiscipline); }}>新建纪律</button>{disciplines.map((item) => <button key={item.discipline_id} className={selectedId === item.discipline_id ? "strategy-choice selected" : "strategy-choice"} onClick={() => select(item.discipline_id)}><strong>{item.name}</strong><small>{item.symbol} · {item.status} · v{item.version}</small></button>)}</aside><section className="panel"><h2>{selectedId ? "编辑个人纪律" : "新建个人纪律"}</h2><p>设定目标价位后，仍须由你自行复核并手动执行。系统不会自动下单。</p>{error && <div className="notice">{error}</div>}{message && <div className="success">{message}</div>}<form onSubmit={submit}><label>纪律名称<input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><div className="discipline-prices"><label>买入价<input type="number" min="0.0001" step="0.0001" value={form.buy_price} onChange={(event) => setForm({ ...form, buy_price: event.target.value })} /></label><label>加仓价（可选）<input type="number" min="0.0001" step="0.0001" value={form.add_price ?? ""} onChange={(event) => setForm({ ...form, add_price: event.target.value || null })} /></label><label>止盈价<input type="number" min="0.0001" step="0.0001" value={form.take_profit_price} onChange={(event) => setForm({ ...form, take_profit_price: event.target.value })} /></label><label>清仓价<input type="number" min="0.0001" step="0.0001" value={form.exit_price} onChange={(event) => setForm({ ...form, exit_price: event.target.value })} /></label></div><p className="muted">有效顺序：清仓价 &lt; 买入价 &lt; 加仓价 &lt; 止盈价。加仓价可以留空。</p><label>复核备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><label>状态<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value as DisciplineInput["status"] })}><option value="active">active（启用）</option><option value="paused">paused（暂停）</option><option value="archived">archived（归档）</option></select></label><button className="primary">保存纪律</button></form></section></section>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <article className="card"><p className="muted">{label}</p><h3>{value}</h3></article>; }

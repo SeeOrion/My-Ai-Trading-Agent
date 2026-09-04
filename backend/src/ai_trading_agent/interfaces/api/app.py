@@ -7,11 +7,20 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from ai_trading_agent.application.disciplines import (
+    ListDisciplinesHandler,
+    SaveDisciplineHandler,
+)
 from ai_trading_agent.application.factors import GetFactorHandler, ListFactorsHandler
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
+from ai_trading_agent.interfaces.facade.disciplines import (
+    discipline_from_input,
+    discipline_repository,
+    get_discipline,
+)
 from ai_trading_agent.interfaces.facade.research_workspace import (
     get_strategy,
     instrument_from_query,
@@ -25,6 +34,8 @@ from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
     ChatRequest,
     ChatResponse,
+    DisciplineInput,
+    DisciplineResponse,
     FactorResponse,
     NewsItemResponse,
     QuoteQuery,
@@ -120,6 +131,56 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
             raise HTTPException(status_code=422, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"策略保存失败：{error}") from error
+
+    @app.get(
+        "/api/v1/disciplines",
+        response_model=list[DisciplineResponse],
+        tags=["disciplines"],
+    )
+    async def list_disciplines() -> list[DisciplineResponse]:
+        try:
+            disciplines = await ListDisciplinesHandler(discipline_repository(app)).handle()
+            return [DisciplineResponse.from_domain(item) for item in disciplines]
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"个人纪律库不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/disciplines",
+        response_model=DisciplineResponse,
+        tags=["disciplines"],
+    )
+    async def create_discipline(payload: DisciplineInput) -> DisciplineResponse:
+        try:
+            discipline = discipline_from_input(payload, uuid4(), 1)
+            saved = await SaveDisciplineHandler(discipline_repository(app)).handle(discipline)
+            return DisciplineResponse.from_domain(saved)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"个人纪律保存失败：{error}") from error
+
+    @app.put(
+        "/api/v1/disciplines/{discipline_id}",
+        response_model=DisciplineResponse,
+        tags=["disciplines"],
+    )
+    async def update_discipline(
+        discipline_id: UUID,
+        payload: DisciplineInput,
+    ) -> DisciplineResponse:
+        try:
+            current = await get_discipline(app, discipline_id)
+            if current is None:
+                raise HTTPException(status_code=404, detail="discipline not found")
+            discipline = discipline_from_input(payload, discipline_id, current.version + 1)
+            saved = await SaveDisciplineHandler(discipline_repository(app)).handle(discipline)
+            return DisciplineResponse.from_domain(saved)
+        except HTTPException:
+            raise
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"个人纪律保存失败：{error}") from error
 
     @app.post("/api/v1/assistant/chat", response_model=ChatResponse, tags=["assistant"])
     async def chat_with_research_agent(request: ChatRequest) -> ChatResponse:

@@ -8,9 +8,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_trading_agent.domain.ability.factors import FactorMetadata
+from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
+from ai_trading_agent.domain.enums.research import DisciplineStatus
 
 DEFAULT_NEWS_SOURCES = ("sina",)
 
@@ -120,6 +122,41 @@ class StrategyResponse(StrategyInput):
             risk_notes=profile.risk_notes,
             status=profile.status,
             version=profile.version,
+        )
+
+
+class DisciplineInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    symbol: str = Field(min_length=1, max_length=64)
+    market: Market
+    instrument_type: InstrumentType = InstrumentType.EQUITY
+    buy_price: Decimal = Field(gt=0)
+    add_price: Decimal | None = Field(default=None, gt=0)
+    take_profit_price: Decimal = Field(gt=0)
+    exit_price: Decimal = Field(gt=0)
+    notes: str = Field(default="", max_length=4_000)
+    status: DisciplineStatus = DisciplineStatus.ACTIVE
+
+
+class DisciplineResponse(DisciplineInput):
+    discipline_id: UUID
+    version: int
+
+    @classmethod
+    def from_domain(cls, discipline: TradingDiscipline) -> DisciplineResponse:
+        return cls(
+            discipline_id=discipline.discipline_id,
+            name=discipline.name,
+            symbol=discipline.instrument.symbol,
+            market=discipline.instrument.market,
+            instrument_type=discipline.instrument.instrument_type,
+            buy_price=discipline.buy_price,
+            add_price=discipline.add_price,
+            take_profit_price=discipline.take_profit_price,
+            exit_price=discipline.exit_price,
+            notes=discipline.notes,
+            status=discipline.status,
+            version=discipline.version,
         )
 
 

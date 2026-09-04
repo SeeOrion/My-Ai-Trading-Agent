@@ -49,6 +49,7 @@ Spearman 相关系数计算，样本少于 5 个标的不纳入统计。这样�
 | 模块 | 写入模型 | 关键约束 | 下一步用例 |
 | --- | --- | --- | --- |
 | Strategy Lab | `strategy_profiles`、`strategy_runs` | 用户策略保存为版本化 JSON 声明；不执行任意 Python 文本 | 已支持 UI 编辑、版本保存与 AI 上下文注入；下一步为回测与风险报告 |
+| Personal Discipline | `trading_disciplines` | 绑定标的、买入/加仓/止盈/清仓价位；强制清仓 < 买入 < 加仓 < 止盈 | 已支持 UI 编辑、启停与版本保存；仅作人工复核，不自动下单 |
 | Document Intelligence | `documents` | 原文件以 `storage_key` 引用；SHA-256 去重；提取文本可审计 | 上传、病毒扫描、PDF/OCR、证据定位 |
 | Journal Analytics | `trade_journal_records` | 数量、价格、费用按原始精度保存；导入时间与成交日分离 | CSV 列映射、成交匹配、PnL/行为归因 |
 

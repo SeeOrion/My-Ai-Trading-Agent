@@ -10,6 +10,7 @@ def test_private_schema_contains_auditable_product_records() -> None:
     assert f"{SCHEMA}.factor_definitions" in tables
     assert f"{SCHEMA}.documents" in tables
     assert f"{SCHEMA}.trade_journal_records" in tables
+    assert f"{SCHEMA}.trading_disciplines" in tables
 
 
 def test_database_engine_requires_async_postgresql_url() -> None:

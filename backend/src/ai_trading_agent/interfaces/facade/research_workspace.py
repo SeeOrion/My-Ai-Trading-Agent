@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import timedelta
 from uuid import UUID
 
@@ -28,16 +27,13 @@ from ai_trading_agent.infrastructure.config.providers import (
     ProviderConfigurationError,
     TushareSettings,
 )
-from ai_trading_agent.infrastructure.repo.database import (
-    create_database_engine,
-    create_session_factory,
-)
 from ai_trading_agent.infrastructure.repo.strategies import SqlAlchemyStrategyProfileRepository
 from ai_trading_agent.infrastructure.rpc.futu_market import FutuMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_news import TushareNewsProvider
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
+from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.model.http import (
     NewsItemResponse,
     QuoteQuery,
@@ -186,18 +182,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
 
 
 def strategy_repository(app: FastAPI) -> SqlAlchemyStrategyProfileRepository:
-    repository = getattr(app.state, "strategy_repository", None)
-    if repository is not None:
-        return repository
-    load_runtime_environment()
-    database_url = os.environ.get("DATABASE_URL", "").strip()
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is required to save personal strategies")
-    app.state.database_engine = create_database_engine(database_url)
-    sessions = create_session_factory(app.state.database_engine)
-    repository = SqlAlchemyStrategyProfileRepository(sessions)
-    app.state.strategy_repository = repository
-    return repository
+    return SqlAlchemyStrategyProfileRepository(private_session_factory(app))
 
 
 async def get_strategy(app: FastAPI, strategy_id: UUID) -> StrategyProfile | None:

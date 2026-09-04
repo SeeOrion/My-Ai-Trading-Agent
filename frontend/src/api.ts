@@ -60,6 +60,24 @@ export interface Strategy extends StrategyInput {
   version: number;
 }
 
+export interface DisciplineInput {
+  name: string;
+  symbol: string;
+  market: Market;
+  instrument_type: "equity" | "etf" | "option";
+  buy_price: string;
+  add_price: string | null;
+  take_profit_price: string;
+  exit_price: string;
+  notes: string;
+  status: "active" | "paused" | "archived";
+}
+
+export interface Discipline extends DisciplineInput {
+  discipline_id: string;
+  version: number;
+}
+
 export interface ChatResult {
   answer: string;
   context_status: string[];
@@ -96,6 +114,11 @@ export const createStrategy = (payload: StrategyInput) =>
   request<Strategy>("/api/v1/strategies", { method: "POST", body: JSON.stringify(payload) });
 export const updateStrategy = (strategyId: string, payload: StrategyInput) =>
   request<Strategy>(`/api/v1/strategies/${strategyId}`, { method: "PUT", body: JSON.stringify(payload) });
+export const fetchDisciplines = () => request<Discipline[]>("/api/v1/disciplines");
+export const createDiscipline = (payload: DisciplineInput) =>
+  request<Discipline>("/api/v1/disciplines", { method: "POST", body: JSON.stringify(payload) });
+export const updateDiscipline = (disciplineId: string, payload: DisciplineInput) =>
+  request<Discipline>(`/api/v1/disciplines/${disciplineId}`, { method: "PUT", body: JSON.stringify(payload) });
 export const askAssistant = (payload: {
   question: string;
   symbol?: string;

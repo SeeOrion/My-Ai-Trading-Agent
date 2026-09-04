@@ -50,6 +50,19 @@ class StrategyProfileRecord(Base, TimestampedRecord):
     definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
+class TradingDisciplineRecord(Base, TimestampedRecord):
+    __tablename__ = "trading_disciplines"
+    __table_args__ = {"schema": SCHEMA}
+
+    discipline_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
 class DocumentRecord(Base, TimestampedRecord):
     __tablename__ = "documents"
     __table_args__ = {"schema": SCHEMA}
