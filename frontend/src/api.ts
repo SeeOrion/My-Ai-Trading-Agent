@@ -131,11 +131,11 @@ export const fetchQuote = (symbol: string, market: Market) =>
   request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market }) });
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
   request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
-export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney");
+export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney&source=sina");
 export const fetchResearch = (symbol: string, market: Market) =>
   request<ResearchReport>("/api/v1/research", {
     method: "POST",
-    body: JSON.stringify({ symbol, market, news_sources: ["eastmoney"] })
+    body: JSON.stringify({ symbol, market, news_sources: ["eastmoney", "sina"] })
   });
 export const fetchStrategies = () => request<Strategy[]>("/api/v1/strategies");
 export const createStrategy = (payload: StrategyInput) =>
