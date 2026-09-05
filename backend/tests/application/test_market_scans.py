@@ -3,9 +3,13 @@ from decimal import Decimal
 
 import pytest
 
-from ai_trading_agent.application.market_scans import RunMarketScanHandler
+from ai_trading_agent.application.market_scans import (
+    PurgeExpiredMarketDataHandler,
+    RunMarketScanHandler,
+)
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.aggregate.market_scan import (
+    MarketDataRetentionResult,
     MarketScanBatch,
     MarketScanRun,
     MarketSnapshot,
@@ -45,6 +49,10 @@ class ScanRepository:
     async def latest(self, market: Market) -> MarketScanRun | None:
         return None
 
+    async def purge_expired(self, cutoff: datetime) -> MarketDataRetentionResult:
+        self.cutoff = cutoff
+        return MarketDataRetentionResult(cutoff, 12, 3)
+
 
 @pytest.mark.asyncio
 async def test_market_scan_persists_completed_batch() -> None:
@@ -66,3 +74,15 @@ async def test_market_scan_persists_failed_run_without_snapshots() -> None:
     assert run.status == "failed"
     assert "upstream unavailable" in (run.error_message or "")
     assert repository.saved[0][1] is None
+
+
+@pytest.mark.asyncio
+async def test_market_data_retention_deletes_only_records_older_than_seven_days() -> None:
+    repository = ScanRepository()
+    now = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
+
+    result = await PurgeExpiredMarketDataHandler(repository).handle(now=now)
+
+    assert repository.cutoff == datetime(2026, 8, 29, 12, 0, tzinfo=UTC)
+    assert result.deleted_snapshot_count == 12
+    assert result.deleted_run_count == 3

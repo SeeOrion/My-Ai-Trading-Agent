@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai_trading_agent.domain.aggregate.market_scan import MarketScanBatch, MarketScanRun
+from ai_trading_agent.domain.aggregate.market_scan import (
+    MarketDataRetentionResult,
+    MarketScanBatch,
+    MarketScanRun,
+)
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.repo.models import MarketScanRunRecord, MarketSnapshotRecord
 
@@ -72,6 +78,22 @@ class SqlAlchemyMarketScanRepository:
             )
             record = (await session.scalars(statement)).first()
             return None if record is None else _to_domain(record)
+
+    async def purge_expired(self, cutoff: datetime) -> MarketDataRetentionResult:
+        """Purge expired facts first, then their now-unneeded audit run records."""
+        async with self._sessions() as session:
+            deleted_snapshots = await session.execute(
+                delete(MarketSnapshotRecord).where(MarketSnapshotRecord.observed_at < cutoff)
+            )
+            deleted_runs = await session.execute(
+                delete(MarketScanRunRecord).where(MarketScanRunRecord.completed_at < cutoff)
+            )
+            await session.commit()
+            return MarketDataRetentionResult(
+                cutoff=cutoff,
+                deleted_snapshot_count=deleted_snapshots.rowcount or 0,
+                deleted_run_count=deleted_runs.rowcount or 0,
+            )
 
 
 def _to_domain(record: MarketScanRunRecord) -> MarketScanRun:

@@ -18,6 +18,7 @@ from ai_trading_agent.application.candidates import (
 )
 from ai_trading_agent.application.market_scans import (
     GetLatestMarketScanHandler,
+    PurgeExpiredMarketDataHandler,
     RunMarketScanHandler,
 )
 from ai_trading_agent.application.news import ResilientLatestNewsHandler
@@ -175,7 +176,12 @@ async def today_candidates(
     return screen, now
 
 
-async def run_market_scan(app: FastAPI, market: Market):  # type: ignore[no-untyped-def]
+async def run_market_scan(
+    app: FastAPI,
+    market: Market,
+    *,
+    purge_after_scan: bool = True,
+):  # type: ignore[no-untyped-def]
     """Compose one market scanner and persist its run without exposing secrets."""
     load_runtime_environment()
     settings = MarketScanSettings.from_environment()
@@ -184,7 +190,10 @@ async def run_market_scan(app: FastAPI, market: Market):  # type: ignore[no-unty
     else:
         provider = FutuMarketScanner(FutuSettings.from_environment(), settings)
     repository = SqlAlchemyMarketScanRepository(private_session_factory(app))
-    return await RunMarketScanHandler(provider, repository).handle(market)
+    run = await RunMarketScanHandler(provider, repository).handle(market)
+    if purge_after_scan:
+        await PurgeExpiredMarketDataHandler(repository).handle()
+    return run
 
 
 async def latest_market_scan(app: FastAPI, market: Market):  # type: ignore[no-untyped-def]
@@ -194,7 +203,9 @@ async def latest_market_scan(app: FastAPI, market: Market):  # type: ignore[no-u
 
 async def run_scheduled_market_scans(app: FastAPI) -> None:
     for market in Market:
-        await run_market_scan(app, market)
+        await run_market_scan(app, market, purge_after_scan=False)
+    repository = SqlAlchemyMarketScanRepository(private_session_factory(app))
+    await PurgeExpiredMarketDataHandler(repository).handle()
 
 
 async def research(query: ResearchRequest) -> ResearchResponse:

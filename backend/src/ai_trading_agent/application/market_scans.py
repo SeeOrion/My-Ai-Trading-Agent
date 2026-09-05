@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
 
-from ai_trading_agent.domain.aggregate.market_scan import MarketScanBatch, MarketScanRun
+from ai_trading_agent.domain.aggregate.market_scan import (
+    MarketDataRetentionResult,
+    MarketScanBatch,
+    MarketScanRun,
+)
 from ai_trading_agent.domain.enums.market import Market
 
 
@@ -23,6 +27,9 @@ class MarketScanRepository(Protocol):
 
     async def latest(self, market: Market) -> MarketScanRun | None:
         """Return the most recently started run for a market."""
+
+    async def purge_expired(self, cutoff: datetime) -> MarketDataRetentionResult:
+        """Delete market snapshots and run records older than the cutoff."""
 
 
 class RunMarketScanHandler:
@@ -66,3 +73,16 @@ class GetLatestMarketScanHandler:
 
     async def handle(self, market: Market) -> MarketScanRun | None:
         return await self._repository.latest(market)
+
+
+class PurgeExpiredMarketDataHandler:
+    def __init__(self, repository: MarketScanRepository, retention_days: int = 7) -> None:
+        if retention_days != 7:
+            raise ValueError("market-data retention must remain seven days")
+        self._repository = repository
+        self._retention_days = retention_days
+
+    async def handle(self, *, now: datetime | None = None) -> MarketDataRetentionResult:
+        observed_now = (now or datetime.now(UTC)).astimezone(UTC)
+        cutoff = observed_now - timedelta(days=self._retention_days)
+        return await self._repository.purge_expired(cutoff)

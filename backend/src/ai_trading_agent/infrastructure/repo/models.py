@@ -113,6 +113,7 @@ class MarketScanRunRecord(Base, TimestampedRecord):
     __tablename__ = "market_scan_runs"
     __table_args__ = (
         Index("ix_market_scan_runs_market_started", "market", "started_at"),
+        Index("ix_market_scan_runs_completed_at", "completed_at"),
         {"schema": SCHEMA},
     )
 
@@ -131,6 +132,7 @@ class MarketSnapshotRecord(Base):
     __tablename__ = "market_snapshots"
     __table_args__ = (
         Index("ix_market_snapshots_run_symbol", "run_id", "symbol"),
+        Index("ix_market_snapshots_observed_at", "observed_at"),
         {"schema": SCHEMA},
     )
 

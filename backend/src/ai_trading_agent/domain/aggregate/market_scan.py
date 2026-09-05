@@ -108,3 +108,19 @@ class MarketScanRun:
         object.__setattr__(self, "completed_at", self.completed_at.astimezone(UTC))
         if self.error_message is not None:
             object.__setattr__(self, "error_message", self.error_message.strip() or None)
+
+
+@dataclass(frozen=True, slots=True)
+class MarketDataRetentionResult:
+    """Counts produced by one irreversible expired-market-data purge."""
+
+    cutoff: datetime
+    deleted_snapshot_count: int
+    deleted_run_count: int
+
+    def __post_init__(self) -> None:
+        if self.cutoff.tzinfo is None:
+            raise ValueError("retention cutoff must be timezone-aware")
+        if self.deleted_snapshot_count < 0 or self.deleted_run_count < 0:
+            raise ValueError("retention deletion counts must not be negative")
+        object.__setattr__(self, "cutoff", self.cutoff.astimezone(UTC))
