@@ -13,6 +13,11 @@ from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.watchlist import (
+    PaperPosition,
+    PaperPositionValuation,
+    WatchlistItem,
+)
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.domain.enums.research import DisciplineStatus
@@ -164,6 +169,72 @@ class ResearchResponse(BaseModel):
     capital_flow: dict[str, object] | None
     news_sentiment: dict[str, object] | None
     notices: list[str]
+
+
+class WatchlistInput(QuoteQuery):
+    label: str = Field(default="", max_length=160)
+    notes: str = Field(default="", max_length=4_000)
+
+
+class WatchlistResponse(WatchlistInput):
+    item_id: UUID
+
+    @classmethod
+    def from_domain(cls, item: WatchlistItem) -> WatchlistResponse:
+        return cls(
+            item_id=item.item_id,
+            symbol=item.instrument.symbol,
+            market=item.instrument.market,
+            instrument_type=item.instrument.instrument_type,
+            label=item.label,
+            notes=item.notes,
+        )
+
+
+class PaperPositionInput(QuoteQuery):
+    quantity: Decimal = Field(gt=0)
+    average_cost: Decimal = Field(gt=0)
+    notes: str = Field(default="", max_length=4_000)
+
+
+class PaperPositionResponse(PaperPositionInput):
+    position_id: UUID
+
+    @classmethod
+    def from_domain(cls, position: PaperPosition) -> PaperPositionResponse:
+        return cls(
+            position_id=position.position_id,
+            symbol=position.instrument.symbol,
+            market=position.instrument.market,
+            instrument_type=position.instrument.instrument_type,
+            quantity=position.quantity,
+            average_cost=position.average_cost,
+            notes=position.notes,
+        )
+
+
+class PaperPositionValuationResponse(PaperPositionResponse):
+    last_price: Decimal
+    currency: str
+    observed_at: str
+    source: str
+    market_value: Decimal
+    unrealized_pnl: Decimal
+    unrealized_pnl_percent: Decimal
+
+    @classmethod
+    def from_domain(cls, valuation: PaperPositionValuation) -> PaperPositionValuationResponse:
+        base = PaperPositionResponse.from_domain(valuation.position).model_dump()
+        return cls(
+            **base,
+            last_price=valuation.quote.last_price,
+            currency=valuation.quote.instrument.currency,
+            observed_at=valuation.quote.observed_at.isoformat(),
+            source=valuation.quote.source,
+            market_value=valuation.market_value,
+            unrealized_pnl=valuation.unrealized_pnl,
+            unrealized_pnl_percent=valuation.unrealized_pnl_percent,
+        )
 
 
 class TechnicalRequest(QuoteQuery):

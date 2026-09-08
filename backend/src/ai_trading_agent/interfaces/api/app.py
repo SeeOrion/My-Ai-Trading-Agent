@@ -13,7 +13,14 @@ from ai_trading_agent.application.disciplines import (
     SaveDisciplineHandler,
 )
 from ai_trading_agent.application.factors import GetFactorHandler, ListFactorsHandler
+from ai_trading_agent.application.portfolio import (
+    ListPaperPositionsHandler,
+    ListWatchlistHandler,
+    SavePaperPositionHandler,
+    SaveWatchlistHandler,
+)
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
+from ai_trading_agent.domain.aggregate.watchlist import value_paper_position
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
@@ -23,6 +30,12 @@ from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
     discipline_repository,
     get_discipline,
+)
+from ai_trading_agent.interfaces.facade.portfolio import (
+    paper_position_from_input,
+    paper_position_repository,
+    watchlist_from_input,
+    watchlist_repository,
 )
 from ai_trading_agent.interfaces.facade.research_workspace import (
     get_strategy,
@@ -48,6 +61,9 @@ from ai_trading_agent.interfaces.model.http import (
     FactorResponse,
     MarketScanResponse,
     NewsItemResponse,
+    PaperPositionInput,
+    PaperPositionResponse,
+    PaperPositionValuationResponse,
     QuoteQuery,
     QuoteResponse,
     ResearchRequest,
@@ -56,6 +72,8 @@ from ai_trading_agent.interfaces.model.http import (
     StrategyResponse,
     TechnicalRequest,
     TechnicalResponse,
+    WatchlistInput,
+    WatchlistResponse,
 )
 
 
@@ -166,6 +184,62 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     @app.post("/api/v1/research", response_model=ResearchResponse, tags=["research"])
     async def analyze_research(query: ResearchRequest) -> ResearchResponse:
         return await research(query)
+
+    @app.get("/api/v1/watchlist", response_model=list[WatchlistResponse], tags=["portfolio"])
+    async def list_watchlist() -> list[WatchlistResponse]:
+        return [
+            WatchlistResponse.from_domain(item)
+            for item in await ListWatchlistHandler(watchlist_repository(app)).handle()
+        ]
+
+    @app.post("/api/v1/watchlist", response_model=WatchlistResponse, tags=["portfolio"])
+    async def save_watchlist(payload: WatchlistInput) -> WatchlistResponse:
+        saved = await SaveWatchlistHandler(watchlist_repository(app)).handle(
+            watchlist_from_input(payload, uuid4())
+        )
+        return WatchlistResponse.from_domain(saved)
+
+    @app.delete("/api/v1/watchlist/{item_id}", status_code=204, tags=["portfolio"])
+    async def delete_watchlist(item_id: UUID) -> None:
+        if not await watchlist_repository(app).delete(str(item_id)):
+            raise HTTPException(status_code=404, detail="watchlist item not found")
+
+    @app.get(
+        "/api/v1/paper-positions", response_model=list[PaperPositionResponse], tags=["portfolio"]
+    )
+    async def list_paper_positions() -> list[PaperPositionResponse]:
+        return [
+            PaperPositionResponse.from_domain(item)
+            for item in await ListPaperPositionsHandler(paper_position_repository(app)).handle()
+        ]
+
+    @app.post("/api/v1/paper-positions", response_model=PaperPositionResponse, tags=["portfolio"])
+    async def save_paper_position(payload: PaperPositionInput) -> PaperPositionResponse:
+        saved = await SavePaperPositionHandler(paper_position_repository(app)).handle(
+            paper_position_from_input(payload, uuid4())
+        )
+        return PaperPositionResponse.from_domain(saved)
+
+    @app.get(
+        "/api/v1/paper-positions/valuations",
+        response_model=list[PaperPositionValuationResponse],
+        tags=["portfolio"],
+    )
+    async def value_paper_positions() -> list[PaperPositionValuationResponse]:
+        positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
+        values = []
+        for position in positions:
+            values.append(
+                PaperPositionValuationResponse.from_domain(
+                    value_paper_position(position, await latest_quote(position.instrument))
+                )
+            )
+        return values
+
+    @app.delete("/api/v1/paper-positions/{position_id}", status_code=204, tags=["portfolio"])
+    async def delete_paper_position(position_id: UUID) -> None:
+        if not await paper_position_repository(app).delete(str(position_id)):
+            raise HTTPException(status_code=404, detail="paper position not found")
 
     @app.post("/api/v1/technical/study", response_model=TechnicalResponse, tags=["technical"])
     async def analyze_technical_study(query: TechnicalRequest) -> TechnicalResponse:
@@ -291,8 +365,7 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
                     TechnicalRequest(symbol=request.symbol, market=request.market)
                 )
                 context.append(
-                    "Technical study (rule-based, not a trading signal): "
-                    f"{study.model_dump_json()}"
+                    f"Technical study (rule-based, not a trading signal): {study.model_dump_json()}"
                 )
                 statuses.append("已汇总 K 线、指标与成交量分布")
             except Exception as error:

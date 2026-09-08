@@ -64,6 +64,31 @@ class TradingDisciplineRecord(Base, TimestampedRecord):
     definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
+class WatchlistItemRecord(Base, TimestampedRecord):
+    __tablename__ = "watchlist_items"
+    __table_args__ = {"schema": SCHEMA}
+
+    item_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    label: Mapped[str] = mapped_column(String(160), nullable=False, default="")
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class PaperPositionRecord(Base, TimestampedRecord):
+    __tablename__ = "paper_positions"
+    __table_args__ = {"schema": SCHEMA}
+
+    position_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
 class DocumentRecord(Base, TimestampedRecord):
     __tablename__ = "documents"
     __table_args__ = {"schema": SCHEMA}
