@@ -121,6 +121,12 @@ export interface Discipline extends DisciplineInput {
   version: number;
 }
 
+export interface WatchlistInput { symbol: string; market: Market; instrument_type: "equity" | "etf" | "option"; label: string; notes: string; }
+export interface WatchlistItem extends WatchlistInput { item_id: string; }
+export interface PaperPositionInput { symbol: string; market: Market; instrument_type: "equity" | "etf" | "option"; quantity: string; average_cost: string; notes: string; }
+export interface PaperPosition extends PaperPositionInput { position_id: string; }
+export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
+
 export interface ChatResult {
   answer: string;
   context_status: string[];
@@ -170,6 +176,13 @@ export const createDiscipline = (payload: DisciplineInput) =>
   request<Discipline>("/api/v1/disciplines", { method: "POST", body: JSON.stringify(payload) });
 export const updateDiscipline = (disciplineId: string, payload: DisciplineInput) =>
   request<Discipline>(`/api/v1/disciplines/${disciplineId}`, { method: "PUT", body: JSON.stringify(payload) });
+export const fetchWatchlist = () => request<WatchlistItem[]>("/api/v1/watchlist");
+export const createWatchlistItem = (payload: WatchlistInput) => request<WatchlistItem>("/api/v1/watchlist", { method: "POST", body: JSON.stringify(payload) });
+export const deleteWatchlistItem = (itemId: string) => request<void>(`/api/v1/watchlist/${itemId}`, { method: "DELETE" });
+export const fetchPaperPositions = () => request<PaperPosition[]>("/api/v1/paper-positions");
+export const createPaperPosition = (payload: PaperPositionInput) => request<PaperPosition>("/api/v1/paper-positions", { method: "POST", body: JSON.stringify(payload) });
+export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });
+export const fetchPaperValuations = () => request<PaperPositionValuation[]>("/api/v1/paper-positions/valuations");
 export const askAssistant = (payload: {
   question: string;
   symbol?: string;
