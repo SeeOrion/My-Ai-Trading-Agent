@@ -17,7 +17,6 @@ from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveS
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
-from ai_trading_agent.infrastructure.config.providers import MarketScanSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.disciplines import (
@@ -33,7 +32,6 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     latest_quote,
     research,
     run_market_scan,
-    run_scheduled_market_scans,
     strategy_from_input,
     strategy_repository,
     technical_study,
@@ -59,24 +57,13 @@ from ai_trading_agent.interfaces.model.http import (
     TechnicalRequest,
     TechnicalResponse,
 )
-from ai_trading_agent.interfaces.task.market_scans import MarketScanScheduler
 
 
 def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):  # type: ignore[no-untyped-def]
-        scheduler: MarketScanScheduler | None = None
         load_runtime_environment()
-        settings = MarketScanSettings.from_environment()
-        if settings.scheduler_enabled:
-            scheduler = MarketScanScheduler(
-                lambda: run_scheduled_market_scans(application),
-                settings.interval_seconds,
-            )
-            scheduler.start()
         yield
-        if scheduler is not None:
-            await scheduler.stop()
 
     app = FastAPI(title="My AI Trading Agent API", version="0.3.0", lifespan=lifespan)
     if cors_origins:
