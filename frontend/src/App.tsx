@@ -1,17 +1,16 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   askAssistant, createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
-  fetchCandidates, fetchFactors, fetchLatestMarketScan, fetchNews, fetchQuote, fetchResearch,
-  fetchStrategies, runMarketScan, CandidateRanking, CandidateScreen, Factor, Market,
-  MarketScanRun, NewsItem, Quote, ResearchReport, Strategy, StrategyInput, updateDiscipline,
-  updateStrategy
+  fetchFactors, fetchNews, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
+  ResearchReport, Strategy, StrategyInput, updateDiscipline,
+  updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe
 } from "./api";
 
-type Page = "dashboard" | "markets" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
+type Page = "dashboard" | "tracking" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
-  { id: "dashboard", label: "总览", description: "AI 研究对话" },
-  { id: "markets", label: "行情", description: "A 股 / 港股 / 美股 / ETF" },
+  { id: "dashboard", label: "总览", description: "AI 研究对话与自选标的" },
+  { id: "tracking", label: "深度跟踪", description: "K 线、指标、资金与筹码分布" },
   { id: "news", label: "财经资讯", description: "公开资讯与情绪" },
   { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
   { id: "strategies", label: "个人策略", description: "编辑、注入、版本" },
@@ -57,7 +56,7 @@ function App() {
     <section className="content">
       <header><div><p className="eyebrow">RESEARCH WORKSPACE</p><h1>{active.label}</h1><p>{active.description}</p></div><span className="pill">本机服务已连接</span></header>
       {page === "dashboard" && <Dashboard strategies={strategies} />}
-      {page === "markets" && <MarketWorkspace />}
+      {page === "tracking" && <TechnicalWorkspace />}
       {page === "news" && <NewsWorkspace />}
       {page === "research" && <ResearchWorkspace />}
       {page === "strategies" && <StrategyWorkspace factors={factors} strategies={strategies} error={strategyError} reload={reloadStrategies} />}
@@ -87,33 +86,20 @@ function Dashboard({ strategies }: { strategies: Strategy[] }) {
     finally { setLoading(false); }
   }
   return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>模型收到的是后端采集的行情、财经资讯、研究结果和已选策略；浏览器不会接触任何密钥。</p></div></section>
-    <TodayCandidates />
     <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "向 AI 提问"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer"><p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>研究结果仅供信息与研究参考，不构成投资或交易指令。</small></article>}</section></>;
 }
 
-function TodayCandidates() {
-  const [market, setMarket] = useState<Market>("a_share");
-  const [ranking, setRanking] = useState<CandidateRanking>("composite");
-  const [screen, setScreen] = useState<CandidateScreen | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  async function load() {
-    setLoading(true); setError(null);
-    try { setScreen(await fetchCandidates(market, ranking, true)); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "候选池读取失败"); }
-    finally { setLoading(false); }
-  }
-  return <section className="panel candidate-panel"><div className="panel-head"><div><p className="eyebrow">TODAY'S RESEARCH CANDIDATES</p><h2>今日入场研究候选</h2><p>每个市场取 3 只，按公开行情的趋势、成交活跃度和日内价格位置综合筛选。请先刷新，再结合你的研究和纪律复核。</p></div><button className="secondary" onClick={load} disabled={loading}>{loading ? "正在更新…" : "刷新今日候选"}</button></div><div className="candidate-controls"><label>市场<select value={market} onChange={(event) => { setMarket(event.target.value as Market); setScreen(null); }}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label><label>排序方式<select value={ranking} onChange={(event) => { setRanking(event.target.value as CandidateRanking); setScreen(null); }}><option value="composite">综合评分</option><option value="balanced_entry">平衡入场</option><option value="momentum">趋势与活跃度</option></select></label></div>{error && <div className="notice">{error}</div>}{screen && <><div className="candidate-grid">{screen.candidates.map((candidate, index) => <article className="candidate-card" key={candidate.symbol}><div className="candidate-top"><span className="candidate-rank">#{index + 1}</span><span className="pill">综合 {candidate.score}</span></div><h3>{candidate.name}</h3><p className="muted">{candidate.symbol}</p><strong className="candidate-price">{candidate.last_price} {candidate.currency}</strong><span className={Number(candidate.change_percent ?? 0) >= 0 ? "change up" : "change down"}>{candidate.change_percent === null ? "当日变动暂无" : `当日 ${Number(candidate.change_percent).toFixed(2)}%`}</span><ul>{candidate.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul></article>)}</div><p className="candidate-meta">已分析 {screen.universe_size} 只样本 · {new Date(screen.refreshed_at).toLocaleString()} · 来源：{screen.source}</p><p className="candidate-disclaimer">{screen.coverage}<br />{screen.disclaimer}</p></>}</section>;
+function TechnicalWorkspace() {
+  const [symbol, setSymbol] = useState("600519.SH"); const [market, setMarket] = useState<Market>("a_share"); const [timeframe, setTimeframe] = useState<TechnicalTimeframe>("1d");
+  const [study, setStudy] = useState<TechnicalStudy | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setStudy(await fetchTechnicalStudy(symbol, market, timeframe)); } catch (reason) { setError(reason instanceof Error ? reason.message : "技术研究请求失败"); } finally { setLoading(false); } }
+  return <section className="panel technical-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><label>分析周期<select value={timeframe} onChange={(event) => setTimeframe(event.target.value as TechnicalTimeframe)}><option value="1d">日 K</option><option value="1w">周 K</option><option value="1m">月 K</option></select></label><button className="primary" disabled={loading}>{loading ? "正在计算…" : "跟踪此标的"}</button></form>{error && <div className="notice">{error}</div>}{study && <TechnicalStudyView study={study} />}</section>;
 }
 
-function MarketWorkspace() {
-  const [symbol, setSymbol] = useState("0700.HK"); const [market, setMarket] = useState<Market>("hong_kong");
-  const [quote, setQuote] = useState<Quote | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  const [scan, setScan] = useState<MarketScanRun | null>(null); const [scanMessage, setScanMessage] = useState<string | null>(null); const [scanning, setScanning] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setQuote(await fetchQuote(symbol, market)); } catch (reason) { setError(reason instanceof Error ? reason.message : "行情请求失败"); } finally { setLoading(false); } }
-  async function runScan() { setScanning(true); setScanMessage(null); try { setScan(await runMarketScan(market)); } catch (reason) { setScanMessage(reason instanceof Error ? reason.message : "扫描请求失败"); } finally { setScanning(false); } }
-  async function loadLatest() { setScanMessage(null); try { setScan(await fetchLatestMarketScan(market)); } catch (reason) { setScanMessage(reason instanceof Error ? reason.message : "暂无扫描记录"); } }
-  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><button className="primary" disabled={loading}>{loading ? "读取中…" : "获取最新行情"}</button></form>{error && <div className="notice">{error}</div>}{quote && <div className="metric-grid"><Metric label="最新价" value={`${quote.last_price} ${quote.currency}`} /><Metric label="来源" value={quote.source} /><Metric label="时间" value={new Date(quote.observed_at).toLocaleString()} /><Metric label="成交量" value={quote.volume ?? "—"} /></div>}<section className="scan-control"><div><p className="eyebrow">MARKET-WIDE SCAN</p><h2>全市场扫描</h2><p>当前市场：{market === "a_share" ? "A 股（Tushare 盘后日线 + 每日指标）" : "港股／美股（Futu OpenD 分批快照）"}。结果保存至本地数据库。</p></div><div className="scan-actions"><button className="secondary" type="button" onClick={loadLatest}>查看最近扫描</button><button className="primary" type="button" onClick={runScan} disabled={scanning}>{scanning ? "扫描中…" : "扫描当前市场"}</button></div>{scanMessage && <div className="notice">{scanMessage}</div>}{scan && <div className={scan.status === "completed" ? "success" : "notice"}>{scan.status === "completed" ? `扫描完成：发现 ${scan.universe_size} 个标的，已保存 ${scan.snapshot_count} 条快照。` : `扫描失败：${scan.error_message ?? "未知错误"}`}<br /><small>{scan.source} · {new Date(scan.completed_at).toLocaleString()}</small></div>}</section></section>;
+function TechnicalStudyView({ study }: { study: TechnicalStudy }) {
+  const indicators = study.indicators; const profile = study.volume_profile;
+  const maxVolume = Math.max(...profile.levels.map((level) => Number(level.volume)), 1);
+  return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {study.timeframe}</h2><p>来源：{study.source}。仅拉取当前标的的历史 K 线，不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><h3>K 线价格区间</h3><div className="candle-strip">{study.bars.slice(-60).map((bar) => { const up = Number(bar.close) >= Number(bar.open); return <span title={`${bar.date} O:${bar.open} H:${bar.high} L:${bar.low} C:${bar.close}`} className={up ? "candle up" : "candle down"} key={bar.date} style={{ height: `${Math.max(8, Math.min(100, (Number(bar.high) - Number(bar.low)) * 10))}%` }} />; })}</div><div className="indicator-row">MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>AI 提问时可直接填写相同标的，系统会结合行情、资讯、基本面与个人策略补充解读。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
 }
 
 function NewsWorkspace() {

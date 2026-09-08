@@ -83,6 +83,11 @@ export interface ResearchReport {
   notices: string[];
 }
 
+export type TechnicalTimeframe = "1d" | "1w" | "1m";
+export type NumericValue = string | number | null;
+export interface TechnicalBar { date: string; open: NumericValue; high: NumericValue; low: NumericValue; close: NumericValue; volume: NumericValue; }
+export interface TechnicalStudy { symbol: string; market: Market; currency: string; timeframe: TechnicalTimeframe; source: string; bars: TechnicalBar[]; indicators: Record<string, NumericValue>; volume_profile: { point_of_control: NumericValue; value_area_low: NumericValue; value_area_high: NumericValue; value_area_percent: NumericValue; method: string; levels: Array<{ price: NumericValue; volume: NumericValue; percent: NumericValue }> }; assessment: { trend: string; momentum: string; volume_pressure: string; observations: string[]; limitations: string[] }; }
+
 export interface StrategyInput {
   name: string;
   thesis: string;
@@ -153,6 +158,8 @@ export const fetchResearch = (symbol: string, market: Market) =>
     method: "POST",
     body: JSON.stringify({ symbol, market, news_sources: ["eastmoney", "sina"] })
   });
+export const fetchTechnicalStudy = (symbol: string, market: Market, timeframe: TechnicalTimeframe) =>
+  request<TechnicalStudy>("/api/v1/technical/study", { method: "POST", body: JSON.stringify({ symbol, market, timeframe, limit: 180 }) });
 export const fetchStrategies = () => request<Strategy[]>("/api/v1/strategies");
 export const createStrategy = (payload: StrategyInput) =>
   request<Strategy>("/api/v1/strategies", { method: "POST", body: JSON.stringify(payload) });
