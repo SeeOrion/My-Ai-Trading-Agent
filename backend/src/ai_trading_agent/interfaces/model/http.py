@@ -16,6 +16,7 @@ from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.domain.enums.research import DisciplineStatus
+from ai_trading_agent.domain.enums.technical import BarTimeframe
 
 DEFAULT_NEWS_SOURCES = ("eastmoney", "sina")
 
@@ -163,6 +164,23 @@ class ResearchResponse(BaseModel):
     capital_flow: dict[str, object] | None
     news_sentiment: dict[str, object] | None
     notices: list[str]
+
+
+class TechnicalRequest(QuoteQuery):
+    timeframe: BarTimeframe = BarTimeframe.DAILY
+    limit: int = Field(default=180, ge=60, le=500)
+
+
+class TechnicalResponse(BaseModel):
+    symbol: str
+    market: Market
+    currency: str
+    timeframe: BarTimeframe
+    source: str
+    bars: list[dict[str, object]]
+    indicators: dict[str, object]
+    volume_profile: dict[str, object]
+    assessment: dict[str, object]
 
 
 class StrategyInput(BaseModel):

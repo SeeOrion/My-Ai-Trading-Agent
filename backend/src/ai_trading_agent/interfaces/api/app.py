@@ -36,6 +36,7 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     run_scheduled_market_scans,
     strategy_from_input,
     strategy_repository,
+    technical_study,
     today_candidates,
 )
 from ai_trading_agent.interfaces.model.http import (
@@ -55,6 +56,8 @@ from ai_trading_agent.interfaces.model.http import (
     ResearchResponse,
     StrategyInput,
     StrategyResponse,
+    TechnicalRequest,
+    TechnicalResponse,
 )
 from ai_trading_agent.interfaces.task.market_scans import MarketScanScheduler
 
@@ -176,6 +179,13 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     @app.post("/api/v1/research", response_model=ResearchResponse, tags=["research"])
     async def analyze_research(query: ResearchRequest) -> ResearchResponse:
         return await research(query)
+
+    @app.post("/api/v1/technical/study", response_model=TechnicalResponse, tags=["technical"])
+    async def analyze_technical_study(query: TechnicalRequest) -> TechnicalResponse:
+        try:
+            return await technical_study(query)
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"技术研究不可用：{error}") from error
 
     @app.get("/api/v1/strategies", response_model=list[StrategyResponse], tags=["strategies"])
     async def list_strategies() -> list[StrategyResponse]:

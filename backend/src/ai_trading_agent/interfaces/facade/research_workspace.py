@@ -26,6 +26,7 @@ from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
 )
+from ai_trading_agent.application.technical import AnalyzeTechnicalStudyHandler
 from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
@@ -45,6 +46,10 @@ from ai_trading_agent.infrastructure.repo.strategies import SqlAlchemyStrategyPr
 from ai_trading_agent.infrastructure.rpc.akshare_news import AkshareNewsProvider
 from ai_trading_agent.infrastructure.rpc.futu_market import FutuMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.futu_scanner import FutuMarketScanner
+from ai_trading_agent.infrastructure.rpc.historical_bars import (
+    FutuHistoricalBarsProvider,
+    TushareHistoricalBarsProvider,
+)
 from ai_trading_agent.infrastructure.rpc.tencent_market import TencentQuoteMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
@@ -57,6 +62,8 @@ from ai_trading_agent.interfaces.model.http import (
     ResearchRequest,
     ResearchResponse,
     StrategyInput,
+    TechnicalRequest,
+    TechnicalResponse,
 )
 
 
@@ -259,6 +266,67 @@ async def research(query: ResearchRequest) -> ResearchResponse:
         capital_flow=capital_flow,
         news_sentiment=news_sentiment,
         notices=notices,
+    )
+
+
+async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
+    """Compose source selection at the interface edge, not in the domain."""
+    load_runtime_environment()
+    instrument = instrument_from_query(query)
+    if instrument.market is Market.A_SHARE:
+        provider = TushareHistoricalBarsProvider(TushareSettings.from_environment())
+    else:
+        provider = FutuHistoricalBarsProvider(FutuSettings.from_environment())
+    study = await AnalyzeTechnicalStudyHandler(provider).handle(
+        instrument, query.timeframe, limit=query.limit
+    )
+    return TechnicalResponse(
+        symbol=instrument.symbol,
+        market=instrument.market,
+        currency=instrument.currency,
+        timeframe=study.timeframe,
+        source=study.source,
+        bars=[
+            {
+                "date": bar.session_date.isoformat(),
+                "open": bar.open_price,
+                "high": bar.high_price,
+                "low": bar.low_price,
+                "close": bar.close_price,
+                "volume": bar.volume,
+            }
+            for bar in study.bars
+        ],
+        indicators={
+            "sma_5": study.indicators.sma_5,
+            "sma_10": study.indicators.sma_10,
+            "sma_20": study.indicators.sma_20,
+            "sma_60": study.indicators.sma_60,
+            "rsi_14": study.indicators.rsi_14,
+            "macd": study.indicators.macd,
+            "macd_signal": study.indicators.macd_signal,
+            "macd_histogram": study.indicators.macd_histogram,
+            "obv": study.indicators.obv,
+            "atr_14": study.indicators.atr_14,
+        },
+        volume_profile={
+            "point_of_control": study.volume_profile.point_of_control,
+            "value_area_low": study.volume_profile.value_area_low,
+            "value_area_high": study.volume_profile.value_area_high,
+            "value_area_percent": study.volume_profile.value_area_percent,
+            "method": study.volume_profile.method,
+            "levels": [
+                {"price": level.price, "volume": level.volume, "percent": level.percent_of_volume}
+                for level in study.volume_profile.levels
+            ],
+        },
+        assessment={
+            "trend": study.assessment.trend,
+            "momentum": study.assessment.momentum,
+            "volume_pressure": study.assessment.volume_pressure,
+            "observations": list(study.assessment.observations),
+            "limitations": list(study.assessment.limitations),
+        },
     )
 
 
