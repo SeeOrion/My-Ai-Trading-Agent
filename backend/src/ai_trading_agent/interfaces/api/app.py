@@ -299,6 +299,17 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
             )
             context.append(f"Research: {report.model_dump_json()}")
             statuses.append("已汇总研究分析")
+            try:
+                study = await technical_study(
+                    TechnicalRequest(symbol=request.symbol, market=request.market)
+                )
+                context.append(
+                    "Technical study (rule-based, not a trading signal): "
+                    f"{study.model_dump_json()}"
+                )
+                statuses.append("已汇总 K 线、指标与成交量分布")
+            except Exception as error:
+                statuses.append(f"技术研究不可用：{error}")
         else:
             statuses.append("未指定标的；仅按问题与策略回答")
         try:
