@@ -146,6 +146,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = (await response.json().catch(() => ({}))) as { detail?: string };
     throw new ApiError(body.detail ?? `请求失败（${response.status}）`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
