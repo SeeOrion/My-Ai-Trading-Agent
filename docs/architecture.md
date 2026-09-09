@@ -83,7 +83,7 @@ Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──
 
 | 范围 | 主适配器 | 作用 | 凭证/限制 |
 | --- | --- | --- | --- |
-| A 股股票盘中快照 | Hithink Finance REST | Futu 无 A 股权限时的私密实时降级行情 | Skill 管理的用户级私密凭据；当前接入仅覆盖 A 股股票 |
+| A 股股票行情与财务 | Hithink Finance REST | 快照、前复权日 K、最新已披露年报财务指标 | Skill 管理的用户级私密凭据；资金流仍由 Tushare 提供 |
 | 场内 ETF / 场外基金 | Hithink Finance REST | ETF 快照与日 K；基金净值、收益、持仓、配置、回撤、诊断与资讯 | ETF 真实 OHLCV 可用于技术研究；场外基金仅有净值和定期披露，不生成虚构成交量 |
 | A 股 / ETF | Tushare Pro | 日线、基本面、资金流 | API token；部分接口按权限/积分开放 |
 | A / 港 / 美股、ETF、期权 | Futu OpenAPI | 实时快照、K 线、盘口、期权与统一代码格式 | OpenD、账户及相应行情权限 |
@@ -94,8 +94,9 @@ Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──
 
 当前实现中，Tushare 的 `daily` 适配器明确标记为日终数据（以上海收盘时间戳返回）；它不会被默认 15 分钟的“最新报价”时效策略误认为实时数据。Futu 适配器经由本地 OpenD，先订阅 `QUOTE` 再读取一次快照并关闭连接；实时权限仍由 Futu 账户决定。
 
-对于 A 股股票，运行时路由优先请求 Futu；若 OpenD 连接、订阅或行情权限失败，或五秒内没有返回，服务在 60 秒冷却期内跳过
-Futu，并按 `hithink_finance`、腾讯公开行情、Tushare `daily` 的顺序自动降级。Hithink Finance 的密钥仅从 Skill 管理的
+对于 A 股股票，运行时行情快照优先请求 Futu；若 OpenD 连接、订阅或行情权限失败，或五秒内没有返回，服务在 60 秒冷却期内跳过
+Futu，并按 `hithink_finance`、腾讯公开行情、Tushare `daily` 的顺序自动降级。技术研究的日 K 与基本面优先使用
+Hithink Finance 的前复权日线和最新已披露财务指标；Tushare 保留为资金流来源。Hithink Finance 的密钥仅从 Skill 管理的
 用户级私密凭据获取，绝不从项目 `.env`、前端或 Git 获取。Tushare 日线结果会明确标记来源 `tushare`，不能当作盘中实时行情。
 冷却期结束后自动再次探测 Futu；两个时长仍可通过 `.env` 的非敏感变量调整。
 

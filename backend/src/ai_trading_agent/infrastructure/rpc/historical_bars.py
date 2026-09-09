@@ -10,8 +10,20 @@ from zoneinfo import ZoneInfo
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.aggregate.technical import PriceBar
 from ai_trading_agent.domain.enums.market import Market
-from ai_trading_agent.infrastructure.config.providers import FutuSettings, TushareSettings
+from ai_trading_agent.infrastructure.config.providers import (
+    FutuSettings,
+    HithinkFinanceSettings,
+    TushareSettings,
+)
 from ai_trading_agent.infrastructure.rpc.futu_market import FutuSymbolMapper
+from ai_trading_agent.infrastructure.rpc.hithink_client import (
+    HithinkFinanceRestClient,
+    HithinkFinanceServiceError,
+    ResponseFetcher,
+    date_from_milliseconds,
+    non_negative_decimal,
+    response_items,
+)
 
 
 class HistoricalBarsProviderError(RuntimeError):
@@ -42,6 +54,40 @@ class TushareHistoricalBarsProvider:
             fields="trade_date,open,high,low,close,vol",
         )
         return _frame_to_bars(frame, instrument, limit)
+
+
+class HithinkAshareHistoricalBarsProvider:
+    """A-share daily K lines with the documented default forward adjustment."""
+
+    name = "hithink_finance"
+
+    def __init__(
+        self, settings: HithinkFinanceSettings, *, response_fetcher: ResponseFetcher | None = None
+    ) -> None:
+        self._client = HithinkFinanceRestClient(settings, response_fetcher=response_fetcher)
+
+    async def get_daily_bars(self, instrument: Instrument, limit: int) -> tuple[PriceBar, ...]:
+        if instrument.market is not Market.A_SHARE:
+            raise HistoricalBarsProviderError("Hithink historical bars only support A-share")
+        end = datetime.now(UTC)
+        start = end - timedelta(days=limit * 3)
+        try:
+            data = await self._client.get(
+                "/api/a-share/prices/historical",
+                {
+                    "thscode": instrument.symbol,
+                    "interval": "1d",
+                    "start": int(start.timestamp() * 1000),
+                    "end": int(end.timestamp() * 1000),
+                    "adjust": "forward",
+                },
+            )
+        except HithinkFinanceServiceError as error:
+            raise HistoricalBarsProviderError(str(error)) from error
+        bars = tuple(_hithink_bar(instrument, row) for row in response_items(data))
+        if not bars:
+            raise HistoricalBarsProviderError(f"no daily bars for {instrument.symbol}")
+        return tuple(sorted(bars, key=lambda bar: bar.session_date)[-limit:])
 
 
 class FutuHistoricalBarsProvider:
@@ -108,3 +154,18 @@ def _decimal(value: object) -> Decimal:
     if not result.is_finite() or result < 0:
         raise HistoricalBarsProviderError(f"invalid numeric bar value: {value!r}")
     return result
+
+
+def _hithink_bar(instrument: Instrument, row: dict[str, object]) -> PriceBar:
+    session_date = date_from_milliseconds(row.get("date_ms"), "date_ms")
+    if session_date is None:
+        raise HistoricalBarsProviderError("historical bar omitted date_ms")
+    return PriceBar(
+        instrument=instrument,
+        session_date=session_date,
+        open_price=non_negative_decimal(row.get("open_price"), "open_price"),
+        high_price=non_negative_decimal(row.get("high_price"), "high_price"),
+        low_price=non_negative_decimal(row.get("low_price"), "low_price"),
+        close_price=non_negative_decimal(row.get("close_price"), "close_price"),
+        volume=non_negative_decimal(row.get("volume"), "volume"),
+    )

@@ -52,7 +52,7 @@ from ai_trading_agent.infrastructure.rpc.futu_market import FutuMarketDataProvid
 from ai_trading_agent.infrastructure.rpc.futu_scanner import FutuMarketScanner
 from ai_trading_agent.infrastructure.rpc.historical_bars import (
     FutuHistoricalBarsProvider,
-    TushareHistoricalBarsProvider,
+    HithinkAshareHistoricalBarsProvider,
 )
 from ai_trading_agent.infrastructure.rpc.hithink_funds import (
     HithinkFundHistoricalBarsProvider,
@@ -62,6 +62,7 @@ from ai_trading_agent.infrastructure.rpc.hithink_funds import (
 from ai_trading_agent.infrastructure.rpc.hithink_market import (
     HithinkFinanceMarketDataProvider,
 )
+from ai_trading_agent.infrastructure.rpc.hithink_research import HithinkAshareResearchProvider
 from ai_trading_agent.infrastructure.rpc.tencent_market import TencentQuoteMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
@@ -290,7 +291,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
     elif instrument.market is Market.A_SHARE:
         try:
             load_runtime_environment()
-            provider = TushareResearchProvider(TushareSettings.from_environment())
+            provider = HithinkAshareResearchProvider(HithinkFinanceSettings.from_environment())
             fundamental = await AnalyzeFundamentalsHandler(provider).handle(instrument)
             fundamentals = {
                 "score": fundamental.score,
@@ -298,7 +299,11 @@ async def research(query: ResearchRequest) -> ResearchResponse:
                 "announced_on": fundamental.snapshot.announced_on.isoformat(),
                 "source": fundamental.snapshot.source,
             }
-            flow = await AnalyzeCapitalFlowHandler(provider).handle(instrument)
+        except Exception as error:
+            notices.append(f"A股基本面暂不可用：{error}")
+        try:
+            flow_provider = TushareResearchProvider(TushareSettings.from_environment())
+            flow = await AnalyzeCapitalFlowHandler(flow_provider).handle(instrument)
             capital_flow = {
                 "trade_date": flow.snapshot.trade_date.isoformat(),
                 "net_flow_cny": flow.snapshot.net_flow_cny,
@@ -308,7 +313,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
                 "source": flow.snapshot.source,
             }
         except Exception as error:
-            notices.append(f"A股基本面/资金流暂不可用：{error}")
+            notices.append(f"A股资金流暂不可用：{error}")
     else:
         notices.append("当前基本面与资金流适配器仅覆盖 A 股；港股/美股将显示行情与资讯。")
     if not _is_hithink_fund(instrument):
@@ -349,7 +354,7 @@ async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
             "可使用基金研究页查看净值和回撤。"
         )
     elif instrument.market is Market.A_SHARE:
-        provider = TushareHistoricalBarsProvider(TushareSettings.from_environment())
+        provider = HithinkAshareHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
     else:
         provider = FutuHistoricalBarsProvider(FutuSettings.from_environment())
     study = await AnalyzeTechnicalStudyHandler(provider).handle(
