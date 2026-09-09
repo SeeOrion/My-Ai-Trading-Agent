@@ -9,10 +9,48 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from math import isfinite
+from pathlib import Path
 
 
 class ProviderConfigurationError(RuntimeError):
     """Raised when an adapter is selected without its required configuration."""
+
+
+@dataclass(frozen=True, slots=True)
+class HithinkFinanceSettings:
+    """Read the unified key from a private user-level source, never the project."""
+
+    api_key: str
+    timeout_seconds: float = 8.0
+
+    @classmethod
+    def from_environment(cls) -> HithinkFinanceSettings:
+        key = os.environ.get("HITHINK_FINANCE_API_KEY", "").strip()
+        if not key:
+            key = _read_hithink_user_credential()
+        if not key:
+            raise ProviderConfigurationError(
+                "Hithink Finance credential is not configured in the private user credential store"
+            )
+        return cls(
+            key,
+            _positive_float(
+                os.environ.get("HITHINK_FINANCE_TIMEOUT_SECONDS", "8"),
+                "HITHINK_FINANCE_TIMEOUT_SECONDS",
+            ),
+        )
+
+
+def _read_hithink_user_credential() -> str:
+    path = Path.home() / "Library/Application Support/hithink-finance/credentials.env"
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            name, separator, value = line.partition("=")
+            if separator and name.strip() == "HITHINK_FINANCE_API_KEY":
+                return value.strip()
+    except OSError:
+        return ""
+    return ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,9 +140,7 @@ class MarketScanSettings:
     def from_environment(cls) -> MarketScanSettings:
         raw_enabled = os.environ.get("MARKET_SCAN_SCHEDULER_ENABLED", "false").strip().lower()
         if raw_enabled not in {"true", "false"}:
-            raise ProviderConfigurationError(
-                "MARKET_SCAN_SCHEDULER_ENABLED must be true or false"
-            )
+            raise ProviderConfigurationError("MARKET_SCAN_SCHEDULER_ENABLED must be true or false")
         return cls(
             futu_batch_size=_bounded_int(
                 os.environ.get("FUTU_SCAN_BATCH_SIZE", "400").strip(),

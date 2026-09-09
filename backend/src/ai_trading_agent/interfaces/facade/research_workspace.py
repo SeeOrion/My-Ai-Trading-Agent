@@ -22,6 +22,7 @@ from ai_trading_agent.application.market_scans import (
     RunMarketScanHandler,
 )
 from ai_trading_agent.application.news import ResilientLatestNewsHandler
+from ai_trading_agent.application.ports import MarketDataProvider
 from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
@@ -36,6 +37,7 @@ from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
     FutuSettings,
+    HithinkFinanceSettings,
     MarketScanSettings,
     ProviderConfigurationError,
     TencentQuoteSettings,
@@ -49,6 +51,9 @@ from ai_trading_agent.infrastructure.rpc.futu_scanner import FutuMarketScanner
 from ai_trading_agent.infrastructure.rpc.historical_bars import (
     FutuHistoricalBarsProvider,
     TushareHistoricalBarsProvider,
+)
+from ai_trading_agent.infrastructure.rpc.hithink_market import (
+    HithinkFinanceMarketDataProvider,
 )
 from ai_trading_agent.infrastructure.rpc.tencent_market import TencentQuoteMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
@@ -90,6 +95,13 @@ async def latest_quote(instrument: Instrument) -> Quote:
 
     if instrument.market is Market.A_SHARE:
         tencent_provider = TencentQuoteMarketDataProvider(TencentQuoteSettings.from_environment())
+        hithink_provider: HithinkFinanceMarketDataProvider | None = None
+        try:
+            hithink_provider = HithinkFinanceMarketDataProvider(
+                HithinkFinanceSettings.from_environment()
+            )
+        except ProviderConfigurationError as error:
+            errors.append(str(error))
         tushare_provider: TushareMarketDataProvider | None = None
         try:
             tushare_provider = TushareMarketDataProvider(TushareSettings.from_environment())
@@ -99,11 +111,15 @@ async def latest_quote(instrument: Instrument) -> Quote:
         if futu_provider:
             return await _get_a_share_quote(
                 futu_provider,
-                tencent_provider,
-                tuple(provider for provider in (tushare_provider,) if provider is not None),
+                hithink_provider or tencent_provider,
+                tuple(
+                    provider
+                    for provider in (tencent_provider, tushare_provider)
+                    if provider is not hithink_provider and provider is not None
+                ),
                 instrument,
             )
-        for provider in (tencent_provider, tushare_provider):
+        for provider in (hithink_provider, tencent_provider, tushare_provider):
             if provider is None:
                 continue
             try:
@@ -123,8 +139,8 @@ async def latest_quote(instrument: Instrument) -> Quote:
 
 async def _get_a_share_quote(
     futu_provider: FutuMarketDataProvider,
-    tencent_provider: TencentQuoteMarketDataProvider,
-    secondary_fallbacks: tuple[TushareMarketDataProvider, ...],
+    fallback_provider: MarketDataProvider,
+    secondary_fallbacks: tuple[MarketDataProvider, ...],
     instrument: Instrument,
 ) -> Quote:
     global _a_share_quote_failover
@@ -132,7 +148,7 @@ async def _get_a_share_quote(
         settings = AShareQuoteFailoverSettings.from_environment()
         _a_share_quote_failover = AShareQuoteFailover(
             primary=futu_provider,
-            fallback=tencent_provider,
+            fallback=fallback_provider,
             secondary_fallbacks=secondary_fallbacks,
             primary_timeout_seconds=settings.futu_timeout_seconds,
             cooldown_seconds=settings.futu_cooldown_seconds,
