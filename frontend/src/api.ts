@@ -1,4 +1,5 @@
-export type Market = "a_share" | "hong_kong" | "united_states";
+export type Market = "a_share" | "hong_kong" | "united_states" | "fund";
+export type InstrumentType = "equity" | "etf" | "fund" | "option";
 
 export interface Factor {
   identifier: string;
@@ -80,8 +81,11 @@ export interface ResearchReport {
   fundamentals: Record<string, unknown> | null;
   capital_flow: Record<string, unknown> | null;
   news_sentiment: Record<string, unknown> | null;
+  fund_research: Record<string, unknown> | null;
   notices: string[];
 }
+
+export interface FundResearch { symbol: string; market: Market; fund: Record<string, unknown>; }
 
 export type TechnicalTimeframe = "1d" | "1w" | "1m";
 export type NumericValue = string | number | null;
@@ -107,7 +111,7 @@ export interface DisciplineInput {
   name: string;
   symbol: string;
   market: Market;
-  instrument_type: "equity" | "etf" | "option";
+  instrument_type: InstrumentType;
   buy_price: string;
   add_price: string | null;
   take_profit_price: string;
@@ -121,9 +125,9 @@ export interface Discipline extends DisciplineInput {
   version: number;
 }
 
-export interface WatchlistInput { symbol: string; market: Market; instrument_type: "equity" | "etf" | "option"; label: string; notes: string; }
+export interface WatchlistInput { symbol: string; market: Market; instrument_type: InstrumentType; label: string; notes: string; }
 export interface WatchlistItem extends WatchlistInput { item_id: string; }
-export interface PaperPositionInput { symbol: string; market: Market; instrument_type: "equity" | "etf" | "option"; quantity: string; average_cost: string; notes: string; }
+export interface PaperPositionInput { symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; notes: string; }
 export interface PaperPosition extends PaperPositionInput { position_id: string; }
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
 
@@ -151,8 +155,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const fetchFactors = () => request<Factor[]>("/api/v1/factors");
-export const fetchQuote = (symbol: string, market: Market) =>
-  request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market }) });
+export const fetchQuote = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
+  request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
   request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
 export const runMarketScan = (market: Market) =>
@@ -160,13 +164,15 @@ export const runMarketScan = (market: Market) =>
 export const fetchLatestMarketScan = (market: Market) =>
   request<MarketScanRun>(`/api/v1/market/scans/${market}/latest`);
 export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney&source=sina");
-export const fetchResearch = (symbol: string, market: Market) =>
+export const fetchResearch = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
   request<ResearchReport>("/api/v1/research", {
     method: "POST",
-    body: JSON.stringify({ symbol, market, news_sources: ["eastmoney", "sina"] })
+    body: JSON.stringify({ symbol, market, instrument_type: instrumentType, news_sources: ["eastmoney", "sina"] })
   });
-export const fetchTechnicalStudy = (symbol: string, market: Market, timeframe: TechnicalTimeframe) =>
-  request<TechnicalStudy>("/api/v1/technical/study", { method: "POST", body: JSON.stringify({ symbol, market, timeframe, limit: 180 }) });
+export const fetchFundResearch = (symbol: string, market: Market, instrumentType: InstrumentType) =>
+  request<FundResearch>("/api/v1/funds/research", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
+export const fetchTechnicalStudy = (symbol: string, market: Market, timeframe: TechnicalTimeframe, instrumentType: InstrumentType = "equity") =>
+  request<TechnicalStudy>("/api/v1/technical/study", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType, timeframe, limit: 180 }) });
 export const fetchStrategies = () => request<Strategy[]>("/api/v1/strategies");
 export const createStrategy = (payload: StrategyInput) =>
   request<Strategy>("/api/v1/strategies", { method: "POST", body: JSON.stringify(payload) });
@@ -188,5 +194,6 @@ export const askAssistant = (payload: {
   question: string;
   symbol?: string;
   market?: Market;
+  instrument_type?: InstrumentType;
   strategy_id?: string;
 }) => request<ChatResult>("/api/v1/assistant/chat", { method: "POST", body: JSON.stringify(payload) });
