@@ -6,8 +6,10 @@ from uuid import UUID
 
 from fastapi import FastAPI
 
+from ai_trading_agent.application.disciplines import EvaluateInstrumentDisciplinesHandler
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
-from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.infrastructure.repo.disciplines import SqlAlchemyTradingDisciplineRepository
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.model.http import DisciplineInput
@@ -19,6 +21,18 @@ def discipline_repository(app: FastAPI) -> SqlAlchemyTradingDisciplineRepository
 
 async def get_discipline(app: FastAPI, discipline_id: UUID) -> TradingDiscipline | None:
     return await discipline_repository(app).get(str(discipline_id))
+
+
+async def evaluate_active_disciplines(
+    app: FastAPI,
+    instrument: Instrument,
+    quote: Quote,
+) -> list[DisciplineDecision]:
+    """Return reproducible states for active disciplines matching one instrument."""
+    return await EvaluateInstrumentDisciplinesHandler(discipline_repository(app)).handle(
+        instrument,
+        quote,
+    )
 
 
 def discipline_from_input(

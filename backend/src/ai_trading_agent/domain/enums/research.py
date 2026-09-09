@@ -29,3 +29,18 @@ class DisciplineStatus(StrEnum):
     ACTIVE = "active"
     PAUSED = "paused"
     ARCHIVED = "archived"
+
+
+class DisciplineDecisionStatus(StrEnum):
+    """Deterministic review states produced from an active price discipline.
+
+    These values intentionally describe a condition for manual review.  They
+    are not brokerage order types and must never be interpreted as an
+    instruction to submit an order.
+    """
+
+    OBSERVE = "observe"
+    BUY_CANDIDATE = "buy_candidate"
+    ADD_CONDITION_MET = "add_condition_met"
+    TAKE_PROFIT = "take_profit"
+    EXIT = "exit"
