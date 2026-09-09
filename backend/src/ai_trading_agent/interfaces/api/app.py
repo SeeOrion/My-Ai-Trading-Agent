@@ -38,6 +38,8 @@ from ai_trading_agent.interfaces.facade.portfolio import (
     watchlist_repository,
 )
 from ai_trading_agent.interfaces.facade.research_workspace import (
+    fund_research_payload,
+    fund_research_report,
     get_strategy,
     instrument_from_query,
     latest_market_scan,
@@ -59,6 +61,7 @@ from ai_trading_agent.interfaces.model.http import (
     DisciplineInput,
     DisciplineResponse,
     FactorResponse,
+    FundResearchResponse,
     MarketScanResponse,
     NewsItemResponse,
     PaperPositionInput,
@@ -184,6 +187,18 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     @app.post("/api/v1/research", response_model=ResearchResponse, tags=["research"])
     async def analyze_research(query: ResearchRequest) -> ResearchResponse:
         return await research(query)
+
+    @app.post("/api/v1/funds/research", response_model=FundResearchResponse, tags=["funds"])
+    async def analyze_fund_research(query: QuoteQuery) -> FundResearchResponse:
+        try:
+            report = await fund_research_report(instrument_from_query(query))
+            return FundResearchResponse(
+                symbol=report.instrument.symbol,
+                market=report.instrument.market,
+                fund=fund_research_payload(report),
+            )
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"基金/ETF 研究不可用：{error}") from error
 
     @app.get("/api/v1/watchlist", response_model=list[WatchlistResponse], tags=["portfolio"])
     async def list_watchlist() -> list[WatchlistResponse]:
@@ -340,7 +355,11 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
         statuses: list[str] = []
         context: list[str] = []
         if request.symbol and request.market:
-            query = QuoteQuery(symbol=request.symbol, market=request.market)
+            query = QuoteQuery(
+                symbol=request.symbol,
+                market=request.market,
+                instrument_type=request.instrument_type,
+            )
             try:
                 quote = await latest_quote(instrument_from_query(query))
                 context.append(
@@ -355,6 +374,7 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
                 ResearchRequest(
                     symbol=request.symbol,
                     market=request.market,
+                    instrument_type=request.instrument_type,
                     news_sources=request.news_sources,
                 )
             )
@@ -362,7 +382,11 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
             statuses.append("已汇总研究分析")
             try:
                 study = await technical_study(
-                    TechnicalRequest(symbol=request.symbol, market=request.market)
+                    TechnicalRequest(
+                        symbol=request.symbol,
+                        market=request.market,
+                        instrument_type=request.instrument_type,
+                    )
                 )
                 context.append(
                     f"Technical study (rule-based, not a trading signal): {study.model_dump_json()}"

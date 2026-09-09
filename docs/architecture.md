@@ -84,6 +84,7 @@ Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──
 | 范围 | 主适配器 | 作用 | 凭证/限制 |
 | --- | --- | --- | --- |
 | A 股股票盘中快照 | Hithink Finance REST | Futu 无 A 股权限时的私密实时降级行情 | Skill 管理的用户级私密凭据；当前接入仅覆盖 A 股股票 |
+| 场内 ETF / 场外基金 | Hithink Finance REST | ETF 快照与日 K；基金净值、收益、持仓、配置、回撤、诊断与资讯 | ETF 真实 OHLCV 可用于技术研究；场外基金仅有净值和定期披露，不生成虚构成交量 |
 | A 股 / ETF | Tushare Pro | 日线、基本面、资金流 | API token；部分接口按权限/积分开放 |
 | A / 港 / 美股、ETF、期权 | Futu OpenAPI | 实时快照、K 线、盘口、期权与统一代码格式 | OpenD、账户及相应行情权限 |
 | A 股公开盘中报价 | 腾讯行情 | 无凭据的末级公开降级来源 | 实验性公开页面源，不作为交易执行价格 |

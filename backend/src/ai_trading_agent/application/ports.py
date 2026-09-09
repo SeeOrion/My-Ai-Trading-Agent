@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import Protocol
 
 from ai_trading_agent.domain.aggregate.candidate import CandidateObservation
+from ai_trading_agent.domain.aggregate.fund import FundResearchReport
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.enums.market import Market
 
@@ -29,6 +30,15 @@ class MarketCandidateProvider(Protocol):
 
     async def get_candidate_observations(self, market: Market) -> list[CandidateObservation]:
         """Return the current observations in the provider's research universe."""
+
+
+class FundResearchProvider(Protocol):
+    """A provider for one selected fund or ETF's disclosed research data."""
+
+    name: str
+
+    async def get_fund_research(self, instrument: Instrument) -> FundResearchReport:
+        """Return disclosed fund data, preserving source limitations."""
 
 
 class Clock(Protocol):

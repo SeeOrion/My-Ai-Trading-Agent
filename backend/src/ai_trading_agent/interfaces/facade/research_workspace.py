@@ -16,6 +16,7 @@ from ai_trading_agent.application.candidates import (
     RankMarketCandidates,
     RankMarketCandidatesHandler,
 )
+from ai_trading_agent.application.funds import GetFundResearchHandler
 from ai_trading_agent.application.market_scans import (
     GetLatestMarketScanHandler,
     PurgeExpiredMarketDataHandler,
@@ -29,11 +30,12 @@ from ai_trading_agent.application.research import (
 )
 from ai_trading_agent.application.technical import AnalyzeTechnicalStudyHandler
 from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
+from ai_trading_agent.domain.aggregate.fund import FundResearchReport
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
-from ai_trading_agent.domain.enums.market import Market
+from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
     FutuSettings,
@@ -51,6 +53,11 @@ from ai_trading_agent.infrastructure.rpc.futu_scanner import FutuMarketScanner
 from ai_trading_agent.infrastructure.rpc.historical_bars import (
     FutuHistoricalBarsProvider,
     TushareHistoricalBarsProvider,
+)
+from ai_trading_agent.infrastructure.rpc.hithink_funds import (
+    HithinkFundHistoricalBarsProvider,
+    HithinkFundMarketDataProvider,
+    HithinkFundResearchProvider,
 )
 from ai_trading_agent.infrastructure.rpc.hithink_market import (
     HithinkFinanceMarketDataProvider,
@@ -92,6 +99,15 @@ async def latest_quote(instrument: Instrument) -> Quote:
         futu_provider = FutuMarketDataProvider(FutuSettings.from_environment())
     except ProviderConfigurationError as error:
         errors.append(str(error))
+
+    if _is_hithink_fund(instrument):
+        try:
+            provider = HithinkFundMarketDataProvider(HithinkFinanceSettings.from_environment())
+            return await get_single_quote(provider, instrument)
+        except Exception as error:
+            errors.append(f"hithink_finance_fund: {error}")
+            if instrument.market is Market.FUND:
+                raise RuntimeError("; ".join(errors)) from error
 
     if instrument.market is Market.A_SHARE:
         tencent_provider = TencentQuoteMarketDataProvider(TencentQuoteSettings.from_environment())
@@ -237,7 +253,41 @@ async def research(query: ResearchRequest) -> ResearchResponse:
     fundamentals: dict[str, object] | None = None
     capital_flow: dict[str, object] | None = None
     news_sentiment: dict[str, object] | None = None
-    if instrument.market is Market.A_SHARE:
+    fund_research: dict[str, object] | None = None
+    if _is_hithink_fund(instrument):
+        try:
+            report = await fund_research_report(instrument)
+            fund_research = fund_research_payload(report)
+            fundamentals = {
+                "name": report.overview.name,
+                "management_company": report.overview.management_company,
+                "manager_name": report.overview.manager_name,
+                "fund_scale": report.overview.fund_scale,
+                "latest_unit_nav": report.overview.latest_unit_nav,
+                "latest_financials": report.latest_financials,
+                "source": report.source,
+            }
+            capital_flow = {
+                "asset_allocations": fund_research["asset_allocations"],
+                "institutional_holding_percent": report.institutional_holding_percent,
+                "holdings": fund_research["holdings"],
+                "source": report.source,
+            }
+            text = "\n".join(f"{article.title}\n{article.summary or ''}" for article in report.news)
+            if text:
+                sentiment = analyze_financial_sentiment(text)
+                news_sentiment = {
+                    "label": sentiment.label,
+                    "score": sentiment.score,
+                    "articles": len(report.news),
+                    "positive_terms": list(sentiment.positive_terms),
+                    "negative_terms": list(sentiment.negative_terms),
+                    "source": report.source,
+                }
+            notices.extend(report.limitations)
+        except Exception as error:
+            notices.append(f"基金/ETF 研究暂不可用：{error}")
+    elif instrument.market is Market.A_SHARE:
         try:
             load_runtime_environment()
             provider = TushareResearchProvider(TushareSettings.from_environment())
@@ -261,26 +311,28 @@ async def research(query: ResearchRequest) -> ResearchResponse:
             notices.append(f"A股基本面/资金流暂不可用：{error}")
     else:
         notices.append("当前基本面与资金流适配器仅覆盖 A 股；港股/美股将显示行情与资讯。")
-    try:
-        news = await latest_news(query.news_sources)
-        text = "\n".join(f"{item.title}\n{item.content}" for item in news)
-        if text:
-            sentiment = analyze_financial_sentiment(text)
-            news_sentiment = {
-                "label": sentiment.label,
-                "score": sentiment.score,
-                "articles": len(news),
-                "positive_terms": list(sentiment.positive_terms),
-                "negative_terms": list(sentiment.negative_terms),
-            }
-    except Exception as error:
-        notices.append(f"财经资讯情绪暂不可用：{error}")
+    if not _is_hithink_fund(instrument):
+        try:
+            news = await latest_news(query.news_sources)
+            text = "\n".join(f"{item.title}\n{item.content}" for item in news)
+            if text:
+                sentiment = analyze_financial_sentiment(text)
+                news_sentiment = {
+                    "label": sentiment.label,
+                    "score": sentiment.score,
+                    "articles": len(news),
+                    "positive_terms": list(sentiment.positive_terms),
+                    "negative_terms": list(sentiment.negative_terms),
+                }
+        except Exception as error:
+            notices.append(f"财经资讯情绪暂不可用：{error}")
     return ResearchResponse(
         symbol=instrument.symbol,
         market=instrument.market,
         fundamentals=fundamentals,
         capital_flow=capital_flow,
         news_sentiment=news_sentiment,
+        fund_research=fund_research,
         notices=notices,
     )
 
@@ -289,7 +341,14 @@ async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
     """Compose source selection at the interface edge, not in the domain."""
     load_runtime_environment()
     instrument = instrument_from_query(query)
-    if instrument.market is Market.A_SHARE:
+    if _is_exchange_etf(instrument):
+        provider = HithinkFundHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
+    elif instrument.market is Market.FUND:
+        raise ValueError(
+            "场外基金暂无真实 OHLCV，无法生成 K 线或 Volume Profile；"
+            "可使用基金研究页查看净值和回撤。"
+        )
+    elif instrument.market is Market.A_SHARE:
         provider = TushareHistoricalBarsProvider(TushareSettings.from_environment())
     else:
         provider = FutuHistoricalBarsProvider(FutuSettings.from_environment())
@@ -343,6 +402,82 @@ async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
             "observations": list(study.assessment.observations),
             "limitations": list(study.assessment.limitations),
         },
+    )
+
+
+async def fund_research_report(instrument: Instrument) -> FundResearchReport:
+    """Resolve one selected public fund into its dedicated disclosed-data aggregate."""
+    load_runtime_environment()
+    provider = HithinkFundResearchProvider(HithinkFinanceSettings.from_environment())
+    return await GetFundResearchHandler(provider).handle(instrument)
+
+
+def fund_research_payload(report: FundResearchReport) -> dict[str, object]:
+    """Translate domain values at the HTTP composition boundary only."""
+    return {
+        "overview": {
+            "name": report.overview.name,
+            "management_company": report.overview.management_company,
+            "manager_name": report.overview.manager_name,
+            "fund_scale": report.overview.fund_scale,
+            "latest_unit_nav": report.overview.latest_unit_nav,
+        },
+        "nav_history": [
+            {
+                "date": item.nav_date.isoformat(),
+                "unit_nav": item.unit_nav,
+                "adjusted_nav": item.adjusted_nav,
+            }
+            for item in report.nav_history
+        ],
+        "returns_percent": report.returns_percent,
+        "drawdowns_percent": report.drawdowns_percent,
+        "holdings": [
+            {
+                "name": item.name,
+                "asset_type": item.asset_type,
+                "weight_percent": item.weight_percent,
+                "market_value": item.market_value,
+                "disclosed_at": item.disclosed_at.isoformat() if item.disclosed_at else None,
+            }
+            for item in report.holdings
+        ],
+        "asset_allocations": [
+            {
+                "report_date": item.report_date.isoformat() if item.report_date else None,
+                "stock_percent": item.stock_percent,
+                "bond_percent": item.bond_percent,
+                "cash_percent": item.cash_percent,
+                "other_percent": item.other_percent,
+            }
+            for item in report.allocations
+        ],
+        "institutional_holding_percent": report.institutional_holding_percent,
+        "latest_financials": report.latest_financials,
+        "diagnostics": report.diagnostics,
+        "news": [
+            {
+                "title": item.title,
+                "summary": item.summary,
+                "publisher": item.publisher,
+                "url": item.url,
+                "published_at": item.published_at.isoformat() if item.published_at else None,
+            }
+            for item in report.news
+        ],
+        "limitations": list(report.limitations),
+        "source": report.source,
+        "observed_at": report.observed_at.isoformat(),
+    }
+
+
+def _is_exchange_etf(instrument: Instrument) -> bool:
+    return instrument.market is Market.A_SHARE and instrument.instrument_type is InstrumentType.ETF
+
+
+def _is_hithink_fund(instrument: Instrument) -> bool:
+    return _is_exchange_etf(instrument) or (
+        instrument.market is Market.FUND and instrument.instrument_type is InstrumentType.FUND
     )
 
 

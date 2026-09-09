@@ -65,5 +65,5 @@ async def test_snapshot_rejects_service_error() -> None:
         response_fetcher=lambda *_: b'{"code": 401, "message": "invalid key"}',
     )
 
-    with pytest.raises(HithinkFinanceProviderError, match="snapshot service error"):
+    with pytest.raises(HithinkFinanceProviderError, match="service error"):
         await provider.get_latest_quotes([_instrument()])

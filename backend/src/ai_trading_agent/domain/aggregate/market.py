@@ -76,6 +76,7 @@ def _default_currency(market: Market) -> str:
         Market.A_SHARE: "CNY",
         Market.HONG_KONG: "HKD",
         Market.UNITED_STATES: "USD",
+        Market.FUND: "CNY",
     }[market]
 
 

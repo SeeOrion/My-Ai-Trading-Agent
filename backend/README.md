@@ -19,3 +19,8 @@ then Tencent's experimental public page feed and Tushare daily data. The Hithink
 key is kept in its user-level private credential store outside this repository;
 never add it to this project `.env` or a deployment manifest. Tencent and
 AKShare are research/display sources only and are never execution prices.
+
+Hithink Finance also powers the selected-fund workspace: exchange-traded ETFs
+receive true snapshots and daily OHLCV, while OTC funds receive their published
+NAV, returns, disclosed holdings, allocation, drawdowns, diagnostics and fund
+news metadata. OTC NAV is never presented as real-time traded volume.

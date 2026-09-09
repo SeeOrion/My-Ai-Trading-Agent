@@ -168,7 +168,14 @@ class ResearchResponse(BaseModel):
     fundamentals: dict[str, object] | None
     capital_flow: dict[str, object] | None
     news_sentiment: dict[str, object] | None
+    fund_research: dict[str, object] | None = None
     notices: list[str]
+
+
+class FundResearchResponse(BaseModel):
+    symbol: str
+    market: Market
+    fund: dict[str, object]
 
 
 class WatchlistInput(QuoteQuery):
@@ -322,6 +329,7 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=8_000)
     symbol: str | None = Field(default=None, max_length=64)
     market: Market | None = None
+    instrument_type: InstrumentType = InstrumentType.EQUITY
     strategy_id: UUID | None = None
     news_sources: list[str] = Field(
         default_factory=lambda: list(DEFAULT_NEWS_SOURCES), max_length=5
