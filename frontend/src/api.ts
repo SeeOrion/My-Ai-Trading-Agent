@@ -148,7 +148,7 @@ export interface PaperPositionValuation extends PaperPosition { last_price: stri
 export interface ChatResult {
   answer: string;
   context_status: string[];
-  discipline_decisions: DisciplineDecision[];
+  discipline_decisions?: DisciplineDecision[];
   disclaimer: string;
 }
 

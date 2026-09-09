@@ -95,7 +95,7 @@ function Dashboard({ strategies }: { strategies: Strategy[] }) {
   const [loading, setLoading] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault(); setLoading(true); setError(null); setAnswer(null); setDecisions([]);
-    try { const result = await askAssistant({ question, symbol, market, instrument_type: instrumentType, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); setDecisions(result.discipline_decisions); }
+    try { const result = await askAssistant({ question, symbol, market, instrument_type: instrumentType, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); setDecisions(result.discipline_decisions ?? []); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "AI 请求失败"); }
     finally { setLoading(false); }
   }
