@@ -20,6 +20,10 @@ key is kept in its user-level private credential store outside this repository;
 never add it to this project `.env` or a deployment manifest. Tencent and
 AKShare are research/display sources only and are never execution prices.
 
+`HITHINK_FINANCE_TIMEOUT_SECONDS` is the only Hithink setting shown in
+`.env.example`. Configure the API Key through the `hithink-finance` Skill's
+system-level private credential flow, not through a project file or Git.
+
 Hithink Finance also powers the selected-fund workspace: exchange-traded ETFs
 receive true snapshots and daily OHLCV, while OTC funds receive their published
 NAV, returns, disclosed holdings, allocation, drawdowns, diagnostics and fund

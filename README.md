@@ -49,8 +49,10 @@ npm run dev
 ## 已配置服务如何进入 UI
 
 本机后端在真正收到行情、资讯、研究或 AI 对话请求时，才从项目根目录的私有 `.env` 装载
-`TUSHARE_TOKEN`、Futu OpenD 地址、LLM 配置和可选的 `DATABASE_URL`。Hithink Finance 的
-A 股私密密钥由其 Skill 的系统级私密凭据保存，后端按需读取但不会放进项目 `.env`、返回给前端或提交到 Git。免费腾讯公开行情与
+`TUSHARE_TOKEN`、Futu OpenD 地址、LLM 配置和可选的 `DATABASE_URL`。同花顺配置在
+[`backend/.env.example`](backend/.env.example) 中保留超时等非敏感参数；其 API Key 由
+`hithink-finance` Skill 的系统级私密凭据保存。后端会按 Skill 的安全优先级读取运行时 Key，
+但项目 `.env`、前端、Git 提交和日志都不应出现 `HITHINK_FINANCE_API_KEY`。免费腾讯公开行情与
 AKShare 公开资讯不需要密钥；这些值绝不返回给前端。
 当前 UI 已接通行情、财经资讯、研究分析、个人策略编辑/版本保存，以及首页 AI 研究对话；文档/OCR
 和交易日志仍是下一阶段模块。
