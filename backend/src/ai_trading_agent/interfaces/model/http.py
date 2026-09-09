@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ai_trading_agent.domain.ability.factors import FactorMetadata
 from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
+from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
 from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
@@ -20,7 +21,7 @@ from ai_trading_agent.domain.aggregate.watchlist import (
 )
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
-from ai_trading_agent.domain.enums.research import DisciplineStatus
+from ai_trading_agent.domain.enums.research import DisciplineDecisionStatus, DisciplineStatus
 from ai_trading_agent.domain.enums.technical import BarTimeframe
 
 DEFAULT_NEWS_SOURCES = ("eastmoney", "sina")
@@ -325,6 +326,69 @@ class DisciplineResponse(DisciplineInput):
         )
 
 
+_DISCIPLINE_DECISION_LABELS: dict[DisciplineDecisionStatus, str] = {
+    DisciplineDecisionStatus.OBSERVE: "观察",
+    DisciplineDecisionStatus.BUY_CANDIDATE: "可考虑买入",
+    DisciplineDecisionStatus.ADD_CONDITION_MET: "加仓条件满足",
+    DisciplineDecisionStatus.TAKE_PROFIT: "止盈",
+    DisciplineDecisionStatus.EXIT: "清仓",
+}
+
+
+class DisciplineDecisionResponse(BaseModel):
+    """One deterministic status, separate from any generative AI explanation."""
+
+    discipline_id: UUID
+    discipline_name: str
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    status: DisciplineDecisionStatus
+    label: str
+    last_price: Decimal
+    matched_level: Decimal | None
+    rationale: str
+
+    @classmethod
+    def from_domain(cls, decision: DisciplineDecision) -> DisciplineDecisionResponse:
+        discipline = decision.discipline
+        price = decision.last_price
+        label = _DISCIPLINE_DECISION_LABELS[decision.status]
+        rationale = {
+            DisciplineDecisionStatus.EXIT: (
+                f"现价 {price} 已触及或低于清仓价 {discipline.exit_price}。"
+            ),
+            DisciplineDecisionStatus.TAKE_PROFIT: (
+                f"现价 {price} 已触及或高于止盈价 {discipline.take_profit_price}。"
+            ),
+            DisciplineDecisionStatus.ADD_CONDITION_MET: (
+                f"现价 {price} 已触及或高于加仓价 {discipline.add_price}，"
+                f"但尚未触及止盈价 {discipline.take_profit_price}。"
+            ),
+            DisciplineDecisionStatus.BUY_CANDIDATE: (
+                f"现价 {price} 处于清仓价 {discipline.exit_price} 之上，"
+                f"且已触及或低于买入价 {discipline.buy_price}。"
+            ),
+            DisciplineDecisionStatus.OBSERVE: (
+                f"现价 {price} 位于买入价 {discipline.buy_price} 与"
+                f"加仓价 {discipline.add_price or discipline.take_profit_price} 之间，"
+                "尚未满足已定义的价位条件。"
+            ),
+        }[decision.status]
+        return cls(
+            discipline_id=discipline.discipline_id,
+            discipline_name=discipline.name,
+            symbol=discipline.instrument.symbol,
+            market=discipline.instrument.market,
+            instrument_type=discipline.instrument.instrument_type,
+            status=decision.status,
+            label=label,
+            last_price=price,
+            matched_level=decision.matched_level,
+            rationale=rationale,
+        )
+
+
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=8_000)
     symbol: str | None = Field(default=None, max_length=64)
@@ -339,4 +403,5 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     context_status: list[str]
+    discipline_decisions: list[DisciplineDecisionResponse] = Field(default_factory=list)
     disclaimer: str

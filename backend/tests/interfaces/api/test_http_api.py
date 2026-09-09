@@ -27,3 +27,10 @@ def test_personal_discipline_routes_are_part_of_the_http_contract() -> None:
     response = TestClient(create_app()).get("/openapi.json")
 
     assert "/api/v1/disciplines" in response.json()["paths"]
+
+
+def test_assistant_contract_exposes_deterministic_discipline_decisions() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    response_schema = schema["components"]["schemas"]["ChatResponse"]
+
+    assert "discipline_decisions" in response_schema["properties"]

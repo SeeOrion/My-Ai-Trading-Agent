@@ -125,6 +125,20 @@ export interface Discipline extends DisciplineInput {
   version: number;
 }
 
+export type DisciplineDecisionStatus = "observe" | "buy_candidate" | "add_condition_met" | "take_profit" | "exit";
+export interface DisciplineDecision {
+  discipline_id: string;
+  discipline_name: string;
+  symbol: string;
+  market: Market;
+  instrument_type: InstrumentType;
+  status: DisciplineDecisionStatus;
+  label: string;
+  last_price: string;
+  matched_level: string | null;
+  rationale: string;
+}
+
 export interface WatchlistInput { symbol: string; market: Market; instrument_type: InstrumentType; label: string; notes: string; }
 export interface WatchlistItem extends WatchlistInput { item_id: string; }
 export interface PaperPositionInput { symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; notes: string; }
@@ -134,6 +148,7 @@ export interface PaperPositionValuation extends PaperPosition { last_price: stri
 export interface ChatResult {
   answer: string;
   context_status: string[];
+  discipline_decisions: DisciplineDecision[];
   disclaimer: string;
 }
 

@@ -29,6 +29,7 @@ from ai_trading_agent.interfaces.adapter.environment import load_runtime_environ
 from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
     discipline_repository,
+    evaluate_active_disciplines,
     get_discipline,
 )
 from ai_trading_agent.interfaces.facade.portfolio import (
@@ -58,6 +59,7 @@ from ai_trading_agent.interfaces.model.http import (
     CandidateScreenResponse,
     ChatRequest,
     ChatResponse,
+    DisciplineDecisionResponse,
     DisciplineInput,
     DisciplineResponse,
     FactorResponse,
@@ -354,6 +356,7 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     async def chat_with_research_agent(request: ChatRequest) -> ChatResponse:
         statuses: list[str] = []
         context: list[str] = []
+        discipline_decisions: list[DisciplineDecisionResponse] = []
         if request.symbol and request.market:
             query = QuoteQuery(
                 symbol=request.symbol,
@@ -368,6 +371,32 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
                     f"observed_at={quote.observed_at.isoformat()}; source={quote.source}."
                 )
                 statuses.append("已获取行情")
+                try:
+                    decisions = await evaluate_active_disciplines(
+                        app,
+                        quote.instrument,
+                        quote,
+                    )
+                    discipline_decisions = [
+                        DisciplineDecisionResponse.from_domain(decision) for decision in decisions
+                    ]
+                    if discipline_decisions:
+                        context.append(
+                            "Deterministic personal-discipline status "
+                            "(binding rule-engine output; explain only, do not change):\n"
+                            + "\n".join(
+                                f"- {item.discipline_name}: {item.label}; {item.rationale}"
+                                for item in discipline_decisions
+                            )
+                        )
+                        statuses.append(
+                            "已按个人纪律计算："
+                            + "、".join(item.label for item in discipline_decisions)
+                        )
+                    else:
+                        statuses.append("未找到此标的的启用个人纪律")
+                except Exception as error:
+                    statuses.append(f"个人纪律不可用：{error}")
             except Exception as error:
                 statuses.append(f"行情不可用：{error}")
             report = await research(
@@ -424,6 +453,7 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
         return ChatResponse(
             answer=answer,
             context_status=statuses,
+            discipline_decisions=discipline_decisions,
             disclaimer="研究结果仅供信息与研究参考，不构成投资或交易指令。",
         )
 

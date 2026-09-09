@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
-  askAssistant, createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
+  askAssistant, createDiscipline, createStrategy, Discipline, DisciplineDecision, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
   ResearchReport, Strategy, StrategyInput, updateDiscipline, InstrumentType, FundResearch, fetchFundResearch,
   updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
@@ -90,16 +90,17 @@ function Dashboard({ strategies }: { strategies: Strategy[] }) {
   const [strategyId, setStrategyId] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
   const [status, setStatus] = useState<string[]>([]);
+  const [decisions, setDecisions] = useState<DisciplineDecision[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   async function submit(event: FormEvent) {
-    event.preventDefault(); setLoading(true); setError(null); setAnswer(null);
-    try { const result = await askAssistant({ question, symbol, market, instrument_type: instrumentType, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); }
+    event.preventDefault(); setLoading(true); setError(null); setAnswer(null); setDecisions([]);
+    try { const result = await askAssistant({ question, symbol, market, instrument_type: instrumentType, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); setDecisions(result.discipline_decisions); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "AI 请求失败"); }
     finally { setLoading(false); }
   }
-  return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>模型收到的是后端采集的行情、财经资讯、研究结果和已选策略；浏览器不会接触任何密钥。</p></div></section>
-    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "向 AI 提问"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer"><p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>研究结果仅供信息与研究参考，不构成投资或交易指令。</small></article>}</section></>;
+  return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>个人纪律状态由后端价位规则计算；AI 仅结合行情、资讯、研究和已选策略解释依据。浏览器不会接触任何密钥。</p></div></section>
+    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "获取 AI 解读与纪律状态"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer">{decisions.length > 0 && <section className="decision-list"><p className="eyebrow">PERSONAL DISCIPLINE STATUS</p>{decisions.map((decision) => <article className={`decision-card ${decision.status}`} key={decision.discipline_id}><div><strong>{decision.label}</strong><p>{decision.discipline_name} · 现价 {decision.last_price}</p></div><small>{decision.rationale}</small></article>)}</section>}<p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>纪律状态仅供你手动复核；研究结果不构成投资或交易指令，系统不会自动下单。</small></article>}</section></>;
 }
 
 const defaultWatchlist: WatchlistInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", label: "", notes: "" };
