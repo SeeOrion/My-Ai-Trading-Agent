@@ -205,8 +205,8 @@ export const fetchResearch = (symbol: string, market: Market, instrumentType: In
   });
 export const fetchFundResearch = (symbol: string, market: Market, instrumentType: InstrumentType) =>
   request<FundResearch>("/api/v1/funds/research", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
-export const fetchTechnicalStudy = (symbol: string, market: Market, timeframe: TechnicalTimeframe, instrumentType: InstrumentType = "equity") =>
-  request<TechnicalStudy>("/api/v1/technical/study", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType, timeframe, limit: 180 }) });
+export const fetchTechnicalStudy = (symbol: string, market: Market, timeframe: TechnicalTimeframe, instrumentType: InstrumentType = "equity", limit = 180) =>
+  request<TechnicalStudy>("/api/v1/technical/study", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType, timeframe, limit }) });
 export const fetchStrategies = () => request<Strategy[]>("/api/v1/strategies");
 export const createStrategy = (payload: StrategyInput) =>
   request<Strategy>("/api/v1/strategies", { method: "POST", body: JSON.stringify(payload) });

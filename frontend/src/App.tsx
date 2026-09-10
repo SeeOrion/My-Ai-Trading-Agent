@@ -3,7 +3,7 @@ import {
   askAssistant, createDiscipline, createStrategy, Discipline, DisciplineDecision, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
   ResearchReport, Strategy, StrategyInput, updateDiscipline, InstrumentType, FundResearch, fetchFundResearch,
-  updateStrategy, fetchTechnicalStudy, TechnicalStudy, WatchlistInput, WatchlistItem,
+  updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
@@ -120,6 +120,10 @@ function OverviewNews() {
 const defaultWatchlist: WatchlistInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", label: "", notes: "" };
 const defaultPaperPosition: PaperPositionInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", quantity: "100", average_cost: "100", notes: "仅用于模拟，不连接券商。" };
 
+function technicalBarLimit(timeframe: TechnicalTimeframe) {
+  return timeframe === "1m" ? 1_200 : timeframe === "1w" ? 420 : 180;
+}
+
 function WatchlistWorkspace() {
   const [items, setItems] = useState<WatchlistItem[]>([]);
   const [analyses, setAnalyses] = useState<WatchlistAnalysis[]>([]);
@@ -129,6 +133,7 @@ function WatchlistWorkspace() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [report, setReport] = useState<ResearchReport | null>(null);
   const [study, setStudy] = useState<TechnicalStudy | null>(null);
+  const [timeframe, setTimeframe] = useState<TechnicalTimeframe>("1d");
   const [deepDive, setDeepDive] = useState<WatchlistFinancialDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -177,7 +182,9 @@ function WatchlistWorkspace() {
     const [quoteResult, researchResult, studyResult, analysisResult, deepDiveResult] = await Promise.allSettled([
       fetchQuote(item.symbol, item.market, item.instrument_type),
       fetchResearch(item.symbol, item.market, item.instrument_type),
-      fetchTechnicalStudy(item.symbol, item.market, "1d", item.instrument_type),
+      fetchTechnicalStudy(
+        item.symbol, item.market, timeframe, item.instrument_type, technicalBarLimit(timeframe)
+      ),
       fetchWatchlistAnalysis(item.item_id),
       fetchWatchlistDeepDive(item.item_id)
     ]);
@@ -208,6 +215,22 @@ function WatchlistWorkspace() {
     }
   }
 
+  async function changeTimeframe(nextTimeframe: TechnicalTimeframe) {
+    setTimeframe(nextTimeframe);
+    if (selected === null) return;
+    setStudy(null); setDetailLoading(true); setMessage(null);
+    try {
+      setStudy(await fetchTechnicalStudy(
+        selected.symbol, selected.market, nextTimeframe, selected.instrument_type,
+        technicalBarLimit(nextTimeframe)
+      ));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "K 线数据读取失败");
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   const selectedAnalysis = selected
     ? analyses.find((item) => item.watchlist_item_id === selected.item_id) ?? null
     : null;
@@ -216,12 +239,12 @@ function WatchlistWorkspace() {
       <section className="panel"><h2>添加自选标的</h2><p>只保存你明确选择的股票、ETF 或基金；不会启动全市场扫描。</p>{message && <div className="success">{message}</div>}<form onSubmit={save}><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><InstrumentTypeField value={form.instrument_type} setValue={(instrument_type) => setForm({ ...form, instrument_type })} /><label>显示名称（可选）<input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} /></label><label>跟踪备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><button className="primary">加入自选</button></form></section>
       <section className="panel"><div className="panel-head"><div><h2>我的自选</h2><p>点击标的展开当日成交、K 线、资金、情绪与 AI 解读。</p></div><button className="secondary" onClick={() => void load()}>刷新列表</button></div><div className="watchlist-cards">{items.map((item) => { const analysis = analyses.find((entry) => entry.watchlist_item_id === item.item_id); return <article className={selected?.item_id === item.item_id ? "watch-item selected" : "watch-item"} key={item.item_id}><button className="watch-item-main" onClick={() => void selectItem(item)}><strong>{item.label || item.symbol}</strong><p>{item.symbol} · {item.market} · {item.instrument_type}</p><div className="tag-list">{analysis ? analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>) : <span className="tag neutral">等待定时分析</span>}</div>{analysis && <small>更新于 {new Date(analysis.observed_at).toLocaleString()} · {analysis.status}</small>}{item.notes && <small>{item.notes}</small>}</button><div className="watch-item-actions"><button className="secondary" onClick={() => void refreshAnalysis(item)} disabled={refreshing}>{refreshing ? "分析中…" : "更新解读"}</button><button className="secondary" onClick={() => void remove(item.item_id)}>移除</button></div></article>; })}</div></section>
     </section>
-    {selected && <WatchlistDetail item={selected} quote={quote} report={report} study={study} analysis={selectedAnalysis} deepDive={deepDive} loading={detailLoading} onRefresh={() => void refreshAnalysis(selected)} refreshing={refreshing} />}
+    {selected && <WatchlistDetail item={selected} quote={quote} report={report} study={study} analysis={selectedAnalysis} deepDive={deepDive} timeframe={timeframe} onTimeframeChange={(value) => void changeTimeframe(value)} loading={detailLoading} onRefresh={() => void refreshAnalysis(selected)} refreshing={refreshing} />}
   </section>;
 }
 
-function WatchlistDetail({ item, quote, report, study, analysis, deepDive, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; deepDive: WatchlistFinancialDetail | null; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
-  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">RESEARCH ANALYSIS · DEEP TRACKING</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="今日成交量" value={quote?.volume ?? "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{deepDive && <FinancialDeepDive detail={deepDive} />}{report && <section className="deep-research-section"><div><p className="eyebrow">RESEARCH ANALYSIS</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /></div>{report.fund_research && <FundWatchlistDetail data={report.fund_research} />}{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}{study && <section className="deep-research-section"><div><p className="eyebrow">DEEP TRACKING</p><h3>深度跟踪：K 线与成交量</h3></div><TechnicalStudyView study={study} /></section>}</section>;
+function WatchlistDetail({ item, quote, report, study, analysis, deepDive, timeframe, onTimeframeChange, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; deepDive: WatchlistFinancialDetail | null; timeframe: TechnicalTimeframe; onTimeframeChange: (value: TechnicalTimeframe) => void; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
+  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">RESEARCH ANALYSIS · DEEP TRACKING</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="今日成交量" value={quote?.volume ?? "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{deepDive && <FinancialDeepDive detail={deepDive} />}{report && <section className="deep-research-section"><div><p className="eyebrow">RESEARCH ANALYSIS</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /></div>{report.fund_research && <FundWatchlistDetail data={report.fund_research} />}{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}<section className="deep-research-section"><div className="panel-head"><div><p className="eyebrow">DEEP TRACKING</p><h3>深度跟踪：K 线、均线与成交量</h3></div><label className="timeframe-control">周期<select value={timeframe} onChange={(event) => onTimeframeChange(event.target.value as TechnicalTimeframe)}><option value="1d">日 K</option><option value="1w">周 K</option><option value="1m">月 K</option></select></label></div>{study ? <TechnicalStudyView study={study} /> : <p className="muted">正在更新 {timeframe === "1d" ? "日 K" : timeframe === "1w" ? "周 K" : "月 K"} 数据…</p>}</section></section>;
 }
 
 function FinancialDeepDive({ detail }: { detail: WatchlistFinancialDetail }) {
@@ -271,7 +294,24 @@ function FundWorkspace() {
 function TechnicalStudyView({ study }: { study: TechnicalStudy }) {
   const indicators = study.indicators; const profile = study.volume_profile;
   const maxVolume = Math.max(...profile.levels.map((level) => Number(level.volume)), 1);
-  return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {study.timeframe}</h2><p>来源：{study.source}。仅拉取当前标的的历史 K 线，不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><h3>K 线价格区间</h3><div className="candle-strip">{study.bars.slice(-60).map((bar) => { const up = Number(bar.close) >= Number(bar.open); return <span title={`${bar.date} O:${bar.open} H:${bar.high} L:${bar.low} C:${bar.close}`} className={up ? "candle up" : "candle down"} key={bar.date} style={{ height: `${Math.max(8, Math.min(100, (Number(bar.high) - Number(bar.low)) * 10))}%` }} />; })}</div><div className="indicator-row">MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>AI 提问时可直接填写相同标的，系统会结合行情、资讯、基本面与个人策略补充解读。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
+  const periodLabel = study.timeframe === "1d" ? "日 K" : study.timeframe === "1w" ? "周 K" : "月 K";
+  return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {periodLabel}</h2><p>来源：{study.source}。A 股/ETF 使用真实日线后按周或月聚合；不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><div className="panel-head"><div><h3>{periodLabel}与均线</h3><p className="muted">蜡烛为 OHLC，底部柱体为成交量；均线基于当前所选周期的收盘价计算。</p></div><div className="ma-legend"><span className="ma5">MA5</span><span className="ma10">MA10</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div></div><CandlestickChart bars={study.bars} /><div className="indicator-row">最新 MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>AI 提问时可直接填写相同标的，系统会结合行情、资讯、基本面与个人策略补充解读。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
+}
+
+function CandlestickChart({ bars }: { bars: TechnicalStudy["bars"] }) {
+  const series = bars.slice(-80).map((bar) => ({
+    ...bar, open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close), volume: Number(bar.volume)
+  })).filter((bar) => [bar.open, bar.high, bar.low, bar.close, bar.volume].every(Number.isFinite));
+  if (series.length < 2) return <p className="muted">可用 K 线不足，暂不能绘制图表。</p>;
+  const width = 1000; const priceTop = 14; const priceHeight = 225; const volumeTop = 258; const volumeHeight = 68; const left = 44; const right = 16;
+  const prices = series.flatMap((bar) => [bar.high, bar.low]); const minPrice = Math.min(...prices); const maxPrice = Math.max(...prices); const priceRange = Math.max(maxPrice - minPrice, Math.abs(maxPrice) * 0.02, 0.01);
+  const maxVolume = Math.max(...series.map((bar) => bar.volume), 1); const step = (width - left - right) / series.length; const bodyWidth = Math.max(2, Math.min(9, step * 0.62));
+  const y = (price: number) => priceTop + (maxPrice - price) / priceRange * priceHeight; const x = (index: number) => left + (index + .5) * step;
+  const movingAverage = (period: number) => series.map((bar, index) => {
+    if (index < period - 1) return null; const closes = series.slice(index - period + 1, index + 1).map((item) => item.close); return { x: x(index), y: y(closes.reduce((sum, value) => sum + value, 0) / period) };
+  }).filter((point): point is { x: number; y: number } => point !== null);
+  const linePoints = (period: number) => movingAverage(period).map((point) => `${point.x},${point.y}`).join(" ");
+  return <svg className="candlestick-chart" viewBox="0 0 1000 350" role="img" aria-label="K 线、成交量和移动平均线"><line x1={left} y1={priceTop + priceHeight} x2={width - right} y2={priceTop + priceHeight} className="chart-axis" /><line x1={left} y1={volumeTop + volumeHeight} x2={width - right} y2={volumeTop + volumeHeight} className="chart-axis" /><text x="4" y={priceTop + 9} className="chart-label">{maxPrice.toFixed(2)}</text><text x="4" y={priceTop + priceHeight} className="chart-label">{minPrice.toFixed(2)}</text>{series.map((bar, index) => { const up = bar.close >= bar.open; const color = up ? "#61cf9e" : "#ec7892"; const highY = y(bar.high); const lowY = y(bar.low); const openY = y(bar.open); const closeY = y(bar.close); const candleTop = Math.min(openY, closeY); return <g key={bar.date}><line x1={x(index)} y1={highY} x2={x(index)} y2={lowY} stroke={color} strokeWidth="1.3" /><rect x={x(index) - bodyWidth / 2} y={candleTop} width={bodyWidth} height={Math.max(1.5, Math.abs(openY - closeY))} fill={color} opacity=".92"><title>{`${bar.date} 开 ${bar.open} 高 ${bar.high} 低 ${bar.low} 收 ${bar.close} 成交量 ${bar.volume}`}</title></rect><rect x={x(index) - bodyWidth / 2} y={volumeTop + volumeHeight - bar.volume / maxVolume * volumeHeight} width={bodyWidth} height={Math.max(1, bar.volume / maxVolume * volumeHeight)} fill={color} opacity=".45" /></g>; })}<polyline points={linePoints(5)} className="ma-line ma5-line" /><polyline points={linePoints(10)} className="ma-line ma10-line" /><polyline points={linePoints(20)} className="ma-line ma20-line" /><polyline points={linePoints(60)} className="ma-line ma60-line" /><text x={left} y="345" className="chart-label">{series[0].date}</text><text x={width - right - 70} y="345" className="chart-label">{series[series.length - 1].date}</text></svg>;
 }
 
 function StrategyWorkspace({ factors, strategies, error, reload }: { factors: Factor[]; strategies: Strategy[]; error: string | null; reload: () => void }) {
