@@ -34,3 +34,10 @@ def test_assistant_contract_exposes_deterministic_discipline_decisions() -> None
     response_schema = schema["components"]["schemas"]["ChatResponse"]
 
     assert "discipline_decisions" in response_schema["properties"]
+
+
+def test_watchlist_analysis_contract_exposes_saved_labels() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    assert "/api/v1/watchlist/analyses" in schema["paths"]
+    assert "tags" in schema["components"]["schemas"]["WatchlistAnalysisResponse"]["properties"]

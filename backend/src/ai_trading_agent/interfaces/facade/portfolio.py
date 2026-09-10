@@ -10,6 +10,7 @@ from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.aggregate.watchlist import PaperPosition, WatchlistItem
 from ai_trading_agent.infrastructure.repo.portfolio import (
     SqlAlchemyPaperPositionRepository,
+    SqlAlchemyWatchlistAnalysisRepository,
     SqlAlchemyWatchlistRepository,
 )
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
@@ -22,6 +23,14 @@ def watchlist_repository(app: FastAPI) -> SqlAlchemyWatchlistRepository:
 
 def paper_position_repository(app: FastAPI) -> SqlAlchemyPaperPositionRepository:
     return SqlAlchemyPaperPositionRepository(private_session_factory(app))
+
+
+def watchlist_analysis_repository(app: FastAPI) -> SqlAlchemyWatchlistAnalysisRepository:
+    return SqlAlchemyWatchlistAnalysisRepository(private_session_factory(app))
+
+
+async def get_watchlist_item(app: FastAPI, item_id: UUID) -> WatchlistItem | None:
+    return await watchlist_repository(app).get(str(item_id))
 
 
 def watchlist_from_input(payload: WatchlistInput, item_id: UUID) -> WatchlistItem:

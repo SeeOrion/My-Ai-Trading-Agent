@@ -19,9 +19,14 @@ from ai_trading_agent.domain.aggregate.watchlist import (
     PaperPositionValuation,
     WatchlistItem,
 )
+from ai_trading_agent.domain.aggregate.watchlist_analysis import WatchlistAnalysisSnapshot
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
-from ai_trading_agent.domain.enums.research import DisciplineDecisionStatus, DisciplineStatus
+from ai_trading_agent.domain.enums.research import (
+    DisciplineDecisionStatus,
+    DisciplineStatus,
+    WatchlistAnalysisStatus,
+)
 from ai_trading_agent.domain.enums.technical import BarTimeframe
 
 DEFAULT_NEWS_SOURCES = ("eastmoney", "sina")
@@ -196,6 +201,47 @@ class WatchlistResponse(WatchlistInput):
             instrument_type=item.instrument.instrument_type,
             label=item.label,
             notes=item.notes,
+        )
+
+
+class WatchlistAnalysisTagResponse(BaseModel):
+    category: str
+    label: str
+    tone: str
+
+
+class WatchlistAnalysisResponse(BaseModel):
+    analysis_id: UUID
+    watchlist_item_id: UUID
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    observed_at: str
+    status: WatchlistAnalysisStatus
+    tags: list[WatchlistAnalysisTagResponse]
+    ai_summary: str | None
+    notices: list[str]
+
+    @classmethod
+    def from_domain(cls, analysis: WatchlistAnalysisSnapshot) -> WatchlistAnalysisResponse:
+        return cls(
+            analysis_id=analysis.analysis_id,
+            watchlist_item_id=analysis.watchlist_item_id,
+            symbol=analysis.instrument.symbol,
+            market=analysis.instrument.market,
+            instrument_type=analysis.instrument.instrument_type,
+            observed_at=analysis.observed_at.isoformat(),
+            status=analysis.status,
+            tags=[
+                WatchlistAnalysisTagResponse(
+                    category=tag.category,
+                    label=tag.label,
+                    tone=tag.tone,
+                )
+                for tag in analysis.tags
+            ],
+            ai_summary=analysis.ai_summary,
+            notices=list(analysis.notices),
         )
 
 

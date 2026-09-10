@@ -158,6 +158,40 @@ class MarketScanSettings:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class WatchlistAnalysisSettings:
+    """Bounded cadence for selected-instrument research refreshes only."""
+
+    scheduler_enabled: bool = True
+    interval_seconds: int = 900
+    max_items_per_run: int = 30
+
+    @classmethod
+    def from_environment(cls) -> WatchlistAnalysisSettings:
+        raw_enabled = os.environ.get(
+            "WATCHLIST_ANALYSIS_SCHEDULER_ENABLED", "true"
+        ).strip().lower()
+        if raw_enabled not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "WATCHLIST_ANALYSIS_SCHEDULER_ENABLED must be true or false"
+            )
+        return cls(
+            scheduler_enabled=raw_enabled == "true",
+            interval_seconds=_bounded_int(
+                os.environ.get("WATCHLIST_ANALYSIS_INTERVAL_SECONDS", "900").strip(),
+                "WATCHLIST_ANALYSIS_INTERVAL_SECONDS",
+                minimum=300,
+                maximum=86_400,
+            ),
+            max_items_per_run=_bounded_int(
+                os.environ.get("WATCHLIST_ANALYSIS_MAX_ITEMS", "30").strip(),
+                "WATCHLIST_ANALYSIS_MAX_ITEMS",
+                minimum=1,
+                maximum=100,
+            ),
+        )
+
+
 def _positive_float(value: str, name: str) -> float:
     try:
         parsed = float(value)

@@ -10,8 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.aggregate.watchlist import PaperPosition, WatchlistItem
+from ai_trading_agent.domain.aggregate.watchlist_analysis import (
+    AnalysisTag,
+    WatchlistAnalysisSnapshot,
+)
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
-from ai_trading_agent.infrastructure.repo.models import PaperPositionRecord, WatchlistItemRecord
+from ai_trading_agent.domain.enums.research import WatchlistAnalysisStatus
+from ai_trading_agent.infrastructure.repo.models import (
+    PaperPositionRecord,
+    WatchlistAnalysisSnapshotRecord,
+    WatchlistItemRecord,
+)
 
 
 class SqlAlchemyWatchlistRepository:
@@ -128,6 +137,58 @@ class SqlAlchemyPaperPositionRepository:
             return True
 
 
+class SqlAlchemyWatchlistAnalysisRepository:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def list_latest(self) -> list[WatchlistAnalysisSnapshot]:
+        async with self._sessions() as session:
+            records = (
+                await session.scalars(
+                    select(WatchlistAnalysisSnapshotRecord).order_by(
+                        WatchlistAnalysisSnapshotRecord.watchlist_item_id,
+                        WatchlistAnalysisSnapshotRecord.observed_at.desc(),
+                    )
+                )
+            ).all()
+        seen: set[str] = set()
+        latest: list[WatchlistAnalysisSnapshot] = []
+        for record in records:
+            if record.watchlist_item_id not in seen:
+                latest.append(_analysis(record))
+                seen.add(record.watchlist_item_id)
+        return latest
+
+    async def get_latest(self, watchlist_item_id: str) -> WatchlistAnalysisSnapshot | None:
+        async with self._sessions() as session:
+            record = await session.scalar(
+                select(WatchlistAnalysisSnapshotRecord)
+                .where(WatchlistAnalysisSnapshotRecord.watchlist_item_id == watchlist_item_id)
+                .order_by(WatchlistAnalysisSnapshotRecord.observed_at.desc())
+                .limit(1)
+            )
+            return None if record is None else _analysis(record)
+
+    async def save(self, analysis: WatchlistAnalysisSnapshot) -> WatchlistAnalysisSnapshot:
+        async with self._sessions() as session:
+            record = WatchlistAnalysisSnapshotRecord(
+                analysis_id=str(analysis.analysis_id),
+                watchlist_item_id=str(analysis.watchlist_item_id),
+                symbol=analysis.instrument.symbol,
+                market=analysis.instrument.market.value,
+                instrument_type=analysis.instrument.instrument_type.value,
+                observed_at=analysis.observed_at,
+                status=analysis.status.value,
+                tags=[tag.definition() for tag in analysis.tags],
+                ai_summary=analysis.ai_summary,
+                notices=list(analysis.notices),
+            )
+            session.add(record)
+            await session.commit()
+            await session.refresh(record)
+            return _analysis(record)
+
+
 def _instrument(record: WatchlistItemRecord | PaperPositionRecord) -> Instrument:
     return Instrument(record.symbol, Market(record.market), InstrumentType(record.instrument_type))
 
@@ -143,4 +204,28 @@ def _position(record: PaperPositionRecord) -> PaperPosition:
         Decimal(str(record.quantity)),
         Decimal(str(record.average_cost)),
         record.notes,
+    )
+
+
+def _analysis(record: WatchlistAnalysisSnapshotRecord) -> WatchlistAnalysisSnapshot:
+    return WatchlistAnalysisSnapshot(
+        analysis_id=UUID(record.analysis_id),
+        watchlist_item_id=UUID(record.watchlist_item_id),
+        instrument=Instrument(
+            record.symbol,
+            Market(record.market),
+            InstrumentType(record.instrument_type),
+        ),
+        observed_at=record.observed_at,
+        status=WatchlistAnalysisStatus(record.status),
+        tags=tuple(
+            AnalysisTag(
+                category=str(item["category"]),
+                label=str(item["label"]),
+                tone=str(item.get("tone", "neutral")),
+            )
+            for item in record.tags
+        ),
+        ai_summary=record.ai_summary,
+        notices=tuple(str(item) for item in record.notices),
     )

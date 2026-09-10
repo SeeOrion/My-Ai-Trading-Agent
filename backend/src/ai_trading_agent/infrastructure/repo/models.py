@@ -76,6 +76,28 @@ class WatchlistItemRecord(Base, TimestampedRecord):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
+class WatchlistAnalysisSnapshotRecord(Base, TimestampedRecord):
+    __tablename__ = "watchlist_analysis_snapshots"
+    __table_args__ = (
+        Index("ix_watchlist_analysis_snapshots_item_observed", "watchlist_item_id", "observed_at"),
+        Index("ix_watchlist_analysis_snapshots_observed_at", "observed_at"),
+        {"schema": SCHEMA},
+    )
+
+    analysis_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    watchlist_item_id: Mapped[str] = mapped_column(
+        ForeignKey(f"{SCHEMA}.watchlist_items.item_id", ondelete="CASCADE"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    tags: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)
+    ai_summary: Mapped[str | None] = mapped_column(Text)
+    notices: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+
 class PaperPositionRecord(Base, TimestampedRecord):
     __tablename__ = "paper_positions"
     __table_args__ = {"schema": SCHEMA}

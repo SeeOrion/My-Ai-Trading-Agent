@@ -24,6 +24,7 @@ from ai_trading_agent.domain.aggregate.watchlist import value_paper_position
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.disciplines import (
@@ -33,6 +34,7 @@ from ai_trading_agent.interfaces.facade.disciplines import (
     get_discipline,
 )
 from ai_trading_agent.interfaces.facade.portfolio import (
+    get_watchlist_item,
     paper_position_from_input,
     paper_position_repository,
     watchlist_from_input,
@@ -52,6 +54,12 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     strategy_repository,
     technical_study,
     today_candidates,
+)
+from ai_trading_agent.interfaces.facade.watchlist_analysis import (
+    latest_watchlist_analyses,
+    latest_watchlist_analysis,
+    refresh_all_watchlist_analyses,
+    refresh_watchlist_analysis,
 )
 from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
@@ -77,16 +85,35 @@ from ai_trading_agent.interfaces.model.http import (
     StrategyResponse,
     TechnicalRequest,
     TechnicalResponse,
+    WatchlistAnalysisResponse,
     WatchlistInput,
     WatchlistResponse,
 )
+from ai_trading_agent.interfaces.task.market_scans import RecurringTaskScheduler
 
 
-def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
+def create_app(
+    *,
+    cors_origins: tuple[str, ...] = (),
+    enable_scheduled_tasks: bool = False,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI):  # type: ignore[no-untyped-def]
         load_runtime_environment()
-        yield
+        scheduler: RecurringTaskScheduler | None = None
+        settings = WatchlistAnalysisSettings.from_environment()
+        if enable_scheduled_tasks and settings.scheduler_enabled:
+            scheduler = RecurringTaskScheduler(
+                lambda: refresh_all_watchlist_analyses(application),
+                settings.interval_seconds,
+            )
+            scheduler.start()
+            application.state.watchlist_analysis_scheduler = scheduler
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                await scheduler.stop()
 
     app = FastAPI(title="My AI Trading Agent API", version="0.3.0", lifespan=lifespan)
     if cors_origins:
@@ -220,6 +247,53 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     async def delete_watchlist(item_id: UUID) -> None:
         if not await watchlist_repository(app).delete(str(item_id)):
             raise HTTPException(status_code=404, detail="watchlist item not found")
+
+    @app.get(
+        "/api/v1/watchlist/analyses",
+        response_model=list[WatchlistAnalysisResponse],
+        tags=["watchlist-analysis"],
+    )
+    async def list_latest_watchlist_analyses() -> list[WatchlistAnalysisResponse]:
+        try:
+            return [
+                WatchlistAnalysisResponse.from_domain(item)
+                for item in await latest_watchlist_analyses(app)
+            ]
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"自选分析不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/watchlist/{item_id}/analysis",
+        response_model=WatchlistAnalysisResponse,
+        tags=["watchlist-analysis"],
+    )
+    async def get_latest_watchlist_analysis(item_id: UUID) -> WatchlistAnalysisResponse:
+        try:
+            analysis = await latest_watchlist_analysis(app, str(item_id))
+            if analysis is None:
+                raise HTTPException(status_code=404, detail="尚无此自选标的的分析结果")
+            return WatchlistAnalysisResponse.from_domain(analysis)
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"自选分析不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/watchlist/{item_id}/analysis/refresh",
+        response_model=WatchlistAnalysisResponse,
+        tags=["watchlist-analysis"],
+    )
+    async def refresh_one_watchlist_analysis(item_id: UUID) -> WatchlistAnalysisResponse:
+        try:
+            item = await get_watchlist_item(app, item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="watchlist item not found")
+            analysis = await refresh_watchlist_analysis(app, item, force=True)
+            return WatchlistAnalysisResponse.from_domain(analysis)
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"自选分析刷新失败：{error}") from error
 
     @app.get(
         "/api/v1/paper-positions", response_model=list[PaperPositionResponse], tags=["portfolio"]
@@ -460,4 +534,4 @@ def create_app(*, cors_origins: tuple[str, ...] = ()) -> FastAPI:
     return app
 
 
-app = create_app()
+app = create_app(enable_scheduled_tasks=True)

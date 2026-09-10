@@ -44,3 +44,9 @@ class DisciplineDecisionStatus(StrEnum):
     ADD_CONDITION_MET = "add_condition_met"
     TAKE_PROFIT = "take_profit"
     EXIT = "exit"
+
+
+class WatchlistAnalysisStatus(StrEnum):
+    COMPLETED = "completed"
+    PARTIAL = "partial"
+    FAILED = "failed"

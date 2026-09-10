@@ -6,8 +6,8 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 
-class MarketScanScheduler:
-    """Run a scan callback at a bounded interval without blocking API traffic."""
+class RecurringTaskScheduler:
+    """Run one bounded callback at an interval without blocking API traffic."""
 
     def __init__(self, callback: Callable[[], Awaitable[None]], interval_seconds: int) -> None:
         self._callback = callback
@@ -17,7 +17,7 @@ class MarketScanScheduler:
 
     def start(self) -> None:
         if self._task is None:
-            self._task = asyncio.create_task(self._run(), name="market-scan-scheduler")
+            self._task = asyncio.create_task(self._run(), name="recurring-private-task")
 
     async def stop(self) -> None:
         self._stop_requested.set()
@@ -38,3 +38,7 @@ class MarketScanScheduler:
                 )
             except TimeoutError:
                 continue
+
+
+# Compatibility name for deployments that imported the first scheduler directly.
+MarketScanScheduler = RecurringTaskScheduler

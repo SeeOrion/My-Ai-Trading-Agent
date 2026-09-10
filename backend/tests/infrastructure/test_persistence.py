@@ -11,6 +11,7 @@ def test_private_schema_contains_auditable_product_records() -> None:
     assert f"{SCHEMA}.documents" in tables
     assert f"{SCHEMA}.trade_journal_records" in tables
     assert f"{SCHEMA}.trading_disciplines" in tables
+    assert f"{SCHEMA}.watchlist_analysis_snapshots" in tables
     assert f"{SCHEMA}.market_scan_runs" in tables
     assert f"{SCHEMA}.market_snapshots" in tables
 
