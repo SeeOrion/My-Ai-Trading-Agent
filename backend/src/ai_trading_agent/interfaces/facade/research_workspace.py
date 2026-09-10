@@ -29,11 +29,13 @@ from ai_trading_agent.application.research import (
     AnalyzeFundamentalsHandler,
 )
 from ai_trading_agent.application.technical import AnalyzeTechnicalStudyHandler
+from ai_trading_agent.application.watchlist_detail import GetWatchlistFinancialDetailHandler
 from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
 from ai_trading_agent.domain.aggregate.fund import FundResearchReport
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.watchlist_detail import WatchlistFinancialDetail
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.config.providers import (
@@ -63,6 +65,9 @@ from ai_trading_agent.infrastructure.rpc.hithink_market import (
     HithinkFinanceMarketDataProvider,
 )
 from ai_trading_agent.infrastructure.rpc.hithink_research import HithinkAshareResearchProvider
+from ai_trading_agent.infrastructure.rpc.hithink_watchlist_detail import (
+    HithinkWatchlistDetailProvider,
+)
 from ai_trading_agent.infrastructure.rpc.tencent_market import TencentQuoteMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketDataProvider
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
@@ -340,6 +345,31 @@ async def research(query: ResearchRequest) -> ResearchResponse:
         fund_research=fund_research,
         notices=notices,
     )
+
+
+async def watchlist_financial_detail(instrument: Instrument):  # type: ignore[no-untyped-def]
+    """Return published company detail for one selected A-share equity only."""
+    if (
+        instrument.market is not Market.A_SHARE
+        or instrument.instrument_type is not InstrumentType.EQUITY
+    ):
+        return WatchlistFinancialDetail(
+            instrument=instrument,
+            observed_at=datetime.now(UTC),
+            source="not_applicable",
+            income_statement=None,
+            balance_sheet=None,
+            cash_flow=None,
+            valuation=None,
+            time_catalysts=(),
+            notices=(
+                "上市公司财报、A 股估值和除权除息事件仅适用于 A 股股票。"
+                "ETF 与基金请查看其已披露的基金持仓、资产配置和净值研究数据。",
+            ),
+        )
+    load_runtime_environment()
+    provider = HithinkWatchlistDetailProvider(HithinkFinanceSettings.from_environment())
+    return await GetWatchlistFinancialDetailHandler(provider).handle(instrument)
 
 
 async def technical_study(query: TechnicalRequest) -> TechnicalResponse:

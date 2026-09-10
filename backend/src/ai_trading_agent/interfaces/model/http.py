@@ -20,6 +20,7 @@ from ai_trading_agent.domain.aggregate.watchlist import (
     WatchlistItem,
 )
 from ai_trading_agent.domain.aggregate.watchlist_analysis import WatchlistAnalysisSnapshot
+from ai_trading_agent.domain.aggregate.watchlist_detail import WatchlistFinancialDetail
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.domain.enums.research import (
@@ -176,6 +177,145 @@ class ResearchResponse(BaseModel):
     news_sentiment: dict[str, object] | None
     fund_research: dict[str, object] | None = None
     notices: list[str]
+
+
+class IncomeStatementSummaryResponse(BaseModel):
+    report_period: str
+    announced_on: str
+    currency: str
+    operating_income: Decimal | None
+    operating_profit: Decimal | None
+    net_profit: Decimal | None
+    basic_eps: Decimal | None
+
+
+class BalanceSheetSummaryResponse(BaseModel):
+    report_period: str
+    currency: str
+    total_assets: Decimal | None
+    total_debt: Decimal | None
+    total_equity: Decimal | None
+    cash: Decimal | None
+    accounts_receivable: Decimal | None
+    debt_to_assets_percent: Decimal | None
+
+
+class CashFlowSummaryResponse(BaseModel):
+    report_period: str
+    currency: str
+    operating_cash_flow: Decimal | None
+    investing_cash_flow: Decimal | None
+    financing_cash_flow: Decimal | None
+    net_cash_change: Decimal | None
+
+
+class ValuationSummaryResponse(BaseModel):
+    observed_at: str | None
+    price_to_earnings_ttm: Decimal | None
+    price_to_earnings_mrq: Decimal | None
+    price_to_book_mrq: Decimal | None
+    price_to_sales_ttm: Decimal | None
+    price_to_cash_flow_ttm: Decimal | None
+
+
+class TimeCatalystResponse(BaseModel):
+    occurred_on: str
+    title: str
+    detail: str
+    kind: str
+
+
+class WatchlistFinancialDetailResponse(BaseModel):
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    observed_at: str
+    source: str
+    income_statement: IncomeStatementSummaryResponse | None
+    balance_sheet: BalanceSheetSummaryResponse | None
+    cash_flow: CashFlowSummaryResponse | None
+    valuation: ValuationSummaryResponse | None
+    time_catalysts: list[TimeCatalystResponse]
+    notices: list[str]
+
+    @classmethod
+    def from_domain(cls, detail: WatchlistFinancialDetail) -> WatchlistFinancialDetailResponse:
+        income = detail.income_statement
+        balance = detail.balance_sheet
+        cash_flow = detail.cash_flow
+        valuation = detail.valuation
+        return cls(
+            symbol=detail.instrument.symbol,
+            market=detail.instrument.market,
+            instrument_type=detail.instrument.instrument_type,
+            observed_at=detail.observed_at.isoformat(),
+            source=detail.source,
+            income_statement=(
+                None
+                if income is None
+                else IncomeStatementSummaryResponse(
+                    report_period=income.report_period.isoformat(),
+                    announced_on=income.announced_on.isoformat(),
+                    currency=income.currency,
+                    operating_income=income.operating_income,
+                    operating_profit=income.operating_profit,
+                    net_profit=income.net_profit,
+                    basic_eps=income.basic_eps,
+                )
+            ),
+            balance_sheet=(
+                None
+                if balance is None
+                else BalanceSheetSummaryResponse(
+                    report_period=balance.report_period.isoformat(),
+                    currency=balance.currency,
+                    total_assets=balance.total_assets,
+                    total_debt=balance.total_debt,
+                    total_equity=balance.total_equity,
+                    cash=balance.cash,
+                    accounts_receivable=balance.accounts_receivable,
+                    debt_to_assets_percent=balance.debt_to_assets_percent,
+                )
+            ),
+            cash_flow=(
+                None
+                if cash_flow is None
+                else CashFlowSummaryResponse(
+                    report_period=cash_flow.report_period.isoformat(),
+                    currency=cash_flow.currency,
+                    operating_cash_flow=cash_flow.operating_cash_flow,
+                    investing_cash_flow=cash_flow.investing_cash_flow,
+                    financing_cash_flow=cash_flow.financing_cash_flow,
+                    net_cash_change=cash_flow.net_cash_change,
+                )
+            ),
+            valuation=(
+                None
+                if valuation is None
+                else ValuationSummaryResponse(
+                    observed_at=(
+                        valuation.observed_at.isoformat()
+                        if valuation.observed_at is not None
+                        else None
+                    ),
+                    price_to_earnings_ttm=valuation.price_to_earnings_ttm,
+                    price_to_earnings_mrq=valuation.price_to_earnings_mrq,
+                    price_to_book_mrq=valuation.price_to_book_mrq,
+                    price_to_sales_ttm=valuation.price_to_sales_ttm,
+                    price_to_cash_flow_ttm=valuation.price_to_cash_flow_ttm,
+                )
+            ),
+            time_catalysts=[
+                TimeCatalystResponse(
+                    occurred_on=item.occurred_on.isoformat(),
+                    title=item.title,
+                    detail=item.detail,
+                    kind=item.kind,
+                )
+                for item in detail.time_catalysts
+            ],
+            notices=list(detail.notices),
+        )
 
 
 class FundResearchResponse(BaseModel):

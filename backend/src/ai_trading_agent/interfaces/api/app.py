@@ -54,6 +54,7 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     strategy_repository,
     technical_study,
     today_candidates,
+    watchlist_financial_detail,
 )
 from ai_trading_agent.interfaces.facade.watchlist_analysis import (
     latest_watchlist_analyses,
@@ -86,6 +87,7 @@ from ai_trading_agent.interfaces.model.http import (
     TechnicalRequest,
     TechnicalResponse,
     WatchlistAnalysisResponse,
+    WatchlistFinancialDetailResponse,
     WatchlistInput,
     WatchlistResponse,
 )
@@ -294,6 +296,23 @@ def create_app(
             raise
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"自选分析刷新失败：{error}") from error
+
+    @app.get(
+        "/api/v1/watchlist/{item_id}/deep-dive",
+        response_model=WatchlistFinancialDetailResponse,
+        tags=["watchlist-analysis"],
+    )
+    async def get_watchlist_deep_dive(item_id: UUID) -> WatchlistFinancialDetailResponse:
+        try:
+            item = await get_watchlist_item(app, item_id)
+            if item is None:
+                raise HTTPException(status_code=404, detail="watchlist item not found")
+            detail = await watchlist_financial_detail(item.instrument)
+            return WatchlistFinancialDetailResponse.from_domain(detail)
+        except HTTPException:
+            raise
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"自选深度数据不可用：{error}") from error
 
     @app.get(
         "/api/v1/paper-positions", response_model=list[PaperPositionResponse], tags=["portfolio"]

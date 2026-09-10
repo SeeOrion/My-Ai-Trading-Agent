@@ -41,3 +41,11 @@ def test_watchlist_analysis_contract_exposes_saved_labels() -> None:
 
     assert "/api/v1/watchlist/analyses" in schema["paths"]
     assert "tags" in schema["components"]["schemas"]["WatchlistAnalysisResponse"]["properties"]
+
+
+def test_watchlist_contract_exposes_single_instrument_financial_detail() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    assert "/api/v1/watchlist/{item_id}/deep-dive" in schema["paths"]
+    response_schema = schema["components"]["schemas"]["WatchlistFinancialDetailResponse"]
+    assert "valuation" in response_schema["properties"]
