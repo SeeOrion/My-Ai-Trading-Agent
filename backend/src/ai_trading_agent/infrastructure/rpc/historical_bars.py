@@ -70,7 +70,9 @@ class HithinkAshareHistoricalBarsProvider:
         if instrument.market is not Market.A_SHARE:
             raise HistoricalBarsProviderError("Hithink historical bars only support A-share")
         end = datetime.now(UTC)
-        start = end - timedelta(days=limit * 3)
+        # The upstream API accepts at most ten calendar years.  The cap leaves enough
+        # daily bars for a 60-period monthly moving average without oversized requests.
+        start = end - timedelta(days=min(limit * 3, 3_650))
         try:
             data = await self._client.get(
                 "/api/a-share/prices/historical",

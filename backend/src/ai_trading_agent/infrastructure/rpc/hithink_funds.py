@@ -105,7 +105,7 @@ class HithinkFundHistoricalBarsProvider:
                 "场外基金只有净值序列，没有真实 OHLCV；不能生成 K 线或成交量分布"
             )
         end = datetime.now(UTC)
-        start = end - timedelta(days=limit * 3)
+        start = end - timedelta(days=min(limit * 3, 3_650))
         try:
             data = await self._client.get(
                 "/api/fund/market/historical",

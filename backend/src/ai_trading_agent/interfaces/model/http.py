@@ -433,7 +433,7 @@ class PaperPositionValuationResponse(PaperPositionResponse):
 
 class TechnicalRequest(QuoteQuery):
     timeframe: BarTimeframe = BarTimeframe.DAILY
-    limit: int = Field(default=180, ge=60, le=500)
+    limit: int = Field(default=180, ge=60, le=1_200)
 
 
 class TechnicalResponse(BaseModel):

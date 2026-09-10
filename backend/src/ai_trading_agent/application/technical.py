@@ -31,7 +31,7 @@ class AnalyzeTechnicalStudyHandler:
         *,
         limit: int = 180,
     ) -> TechnicalStudy:
-        if not 60 <= limit <= 500:
-            raise ValueError("limit must be between 60 and 500")
+        if not 60 <= limit <= 1_200:
+            raise ValueError("limit must be between 60 and 1200")
         bars = await self._provider.get_daily_bars(instrument, limit)
         return analyze_technical_study(instrument, bars, timeframe, self._provider.name)
