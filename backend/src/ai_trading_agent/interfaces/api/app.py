@@ -23,16 +23,14 @@ from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveS
 from ai_trading_agent.domain.aggregate.watchlist import value_paper_position
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
-from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
-from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
     discipline_repository,
-    evaluate_active_disciplines,
     get_discipline,
 )
+from ai_trading_agent.interfaces.facade.market_brief import post_market_brief
 from ai_trading_agent.interfaces.facade.portfolio import (
     get_watchlist_item,
     paper_position_from_input,
@@ -66,9 +64,6 @@ from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
     CandidateResponse,
     CandidateScreenResponse,
-    ChatRequest,
-    ChatResponse,
-    DisciplineDecisionResponse,
     DisciplineInput,
     DisciplineResponse,
     FactorResponse,
@@ -78,6 +73,7 @@ from ai_trading_agent.interfaces.model.http import (
     PaperPositionInput,
     PaperPositionResponse,
     PaperPositionValuationResponse,
+    PostMarketBriefResponse,
     QuoteQuery,
     QuoteResponse,
     ResearchRequest,
@@ -150,6 +146,17 @@ def create_app(
             return QuoteResponse.from_domain(await latest_quote(instrument_from_query(query)))
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"行情不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/market/post-market-brief",
+        response_model=PostMarketBriefResponse,
+        tags=["market"],
+    )
+    async def get_post_market_brief(refresh: bool = False) -> PostMarketBriefResponse:
+        try:
+            return PostMarketBriefResponse.from_domain(await post_market_brief(refresh=refresh))
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"盘后快报暂不可用：{error}") from error
 
     @app.get(
         "/api/v1/market/candidates",
@@ -444,111 +451,6 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"个人纪律保存失败：{error}") from error
-
-    @app.post("/api/v1/assistant/chat", response_model=ChatResponse, tags=["assistant"])
-    async def chat_with_research_agent(request: ChatRequest) -> ChatResponse:
-        statuses: list[str] = []
-        context: list[str] = []
-        discipline_decisions: list[DisciplineDecisionResponse] = []
-        if request.symbol and request.market:
-            query = QuoteQuery(
-                symbol=request.symbol,
-                market=request.market,
-                instrument_type=request.instrument_type,
-            )
-            try:
-                quote = await latest_quote(instrument_from_query(query))
-                context.append(
-                    f"Quote: {quote.instrument.symbol} {quote.last_price} "
-                    f"{quote.instrument.currency}; "
-                    f"observed_at={quote.observed_at.isoformat()}; source={quote.source}."
-                )
-                statuses.append("已获取行情")
-                try:
-                    decisions = await evaluate_active_disciplines(
-                        app,
-                        quote.instrument,
-                        quote,
-                    )
-                    discipline_decisions = [
-                        DisciplineDecisionResponse.from_domain(decision) for decision in decisions
-                    ]
-                    if discipline_decisions:
-                        context.append(
-                            "Deterministic personal-discipline status "
-                            "(binding rule-engine output; explain only, do not change):\n"
-                            + "\n".join(
-                                f"- {item.discipline_name}: {item.label}; {item.rationale}"
-                                for item in discipline_decisions
-                            )
-                        )
-                        statuses.append(
-                            "已按个人纪律计算："
-                            + "、".join(item.label for item in discipline_decisions)
-                        )
-                    else:
-                        statuses.append("未找到此标的的启用个人纪律")
-                except Exception as error:
-                    statuses.append(f"个人纪律不可用：{error}")
-            except Exception as error:
-                statuses.append(f"行情不可用：{error}")
-            report = await research(
-                ResearchRequest(
-                    symbol=request.symbol,
-                    market=request.market,
-                    instrument_type=request.instrument_type,
-                    news_sources=request.news_sources,
-                )
-            )
-            context.append(f"Research: {report.model_dump_json()}")
-            statuses.append("已汇总研究分析")
-            try:
-                study = await technical_study(
-                    TechnicalRequest(
-                        symbol=request.symbol,
-                        market=request.market,
-                        instrument_type=request.instrument_type,
-                    )
-                )
-                context.append(
-                    f"Technical study (rule-based, not a trading signal): {study.model_dump_json()}"
-                )
-                statuses.append("已汇总 K 线、指标与成交量分布")
-            except Exception as error:
-                statuses.append(f"技术研究不可用：{error}")
-        else:
-            statuses.append("未指定标的；仅按问题与策略回答")
-        try:
-            news = await latest_news(request.news_sources)
-            headlines = "\n".join(f"- {item.title} ({item.publisher})" for item in news[:8])
-            context.append(f"Recent financial news:\n{headlines}")
-            statuses.append("已获取财经资讯")
-        except Exception as error:
-            statuses.append(f"资讯不可用：{error}")
-        if request.strategy_id:
-            try:
-                strategy = await get_strategy(app, request.strategy_id)
-                if strategy is None:
-                    statuses.append("所选策略不存在")
-                else:
-                    context.append(f"User strategy preference: {strategy.definition()}")
-                    statuses.append(f"已注入策略：{strategy.name}")
-            except Exception as error:
-                statuses.append(f"策略不可用：{error}")
-        try:
-            load_runtime_environment()
-            adviser = OpenAICompatibleResearchAdvisor(
-                OpenAICompatibleLLMSettings.from_environment()
-            )
-            answer = await adviser.answer(question=request.question, context="\n\n".join(context))
-        except Exception as error:
-            raise HTTPException(status_code=503, detail=f"AI 研究助手不可用：{error}") from error
-        return ChatResponse(
-            answer=answer,
-            context_status=statuses,
-            discipline_decisions=discipline_decisions,
-            disclaimer="研究结果仅供信息与研究参考，不构成投资或交易指令。",
-        )
 
     return app
 

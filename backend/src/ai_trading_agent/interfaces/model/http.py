@@ -12,6 +12,7 @@ from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
 from ai_trading_agent.domain.aggregate.market import Quote
+from ai_trading_agent.domain.aggregate.market_brief import PostMarketBrief
 from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist import (
@@ -84,6 +85,74 @@ class QuoteResponse(BaseModel):
             low_price=quote.low_price,
             previous_close=quote.previous_close,
             volume=quote.volume,
+        )
+
+
+class MarketIndexResponse(BaseModel):
+    symbol: str
+    name: str
+    last_price: Decimal
+    price_change: Decimal | None
+    change_percent: Decimal | None
+
+
+class SectorRotationResponse(BaseModel):
+    symbol: str
+    name: str
+    last_price: Decimal
+    change_percent: Decimal
+
+
+class PostMarketBriefResponse(BaseModel):
+    observed_at: str
+    source: str
+    indices: list[MarketIndexResponse]
+    leading_sectors: list[SectorRotationResponse]
+    lagging_sectors: list[SectorRotationResponse]
+    coverage: str
+    disclaimer: str
+
+    @classmethod
+    def from_domain(cls, brief: PostMarketBrief) -> PostMarketBriefResponse:
+        return cls(
+            observed_at=brief.observed_at.isoformat(),
+            source=brief.source,
+            indices=[
+                MarketIndexResponse(
+                    symbol=item.symbol,
+                    name=item.name,
+                    last_price=item.last_price,
+                    price_change=item.price_change,
+                    change_percent=item.change_percent,
+                )
+                for item in brief.indices
+            ],
+            leading_sectors=[
+                SectorRotationResponse(
+                    symbol=item.symbol,
+                    name=item.name,
+                    last_price=item.last_price,
+                    change_percent=item.change_percent,
+                )
+                for item in brief.leading_sectors
+            ],
+            lagging_sectors=[
+                SectorRotationResponse(
+                    symbol=item.symbol,
+                    name=item.name,
+                    last_price=item.last_price,
+                    change_percent=item.change_percent,
+                )
+                for item in brief.lagging_sectors
+            ],
+            coverage=(
+                "同花顺指数快照：上证、深成、创业板和沪深 300；"
+                "行业板块按公开的同花顺行业指数当日涨跌幅排序。"
+            ),
+            disclaimer=(
+                "板块轮动仅按指数涨跌幅呈现，并非主力资金流、持仓或交易信号；"
+                "盘中访问时显示的是最新快照，并非已收盘结论。"
+            ),
         )
 
 
@@ -573,21 +642,3 @@ class DisciplineDecisionResponse(BaseModel):
             matched_level=decision.matched_level,
             rationale=rationale,
         )
-
-
-class ChatRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=8_000)
-    symbol: str | None = Field(default=None, max_length=64)
-    market: Market | None = None
-    instrument_type: InstrumentType = InstrumentType.EQUITY
-    strategy_id: UUID | None = None
-    news_sources: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_NEWS_SOURCES), max_length=5
-    )
-
-
-class ChatResponse(BaseModel):
-    answer: str
-    context_status: list[str]
-    discipline_decisions: list[DisciplineDecisionResponse] = Field(default_factory=list)
-    disclaimer: str
