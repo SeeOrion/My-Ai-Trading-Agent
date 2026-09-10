@@ -154,6 +154,12 @@ export interface WatchlistAnalysis {
   ai_summary: string | null;
   notices: string[];
 }
+export interface IncomeStatementSummary { report_period: string; announced_on: string; currency: string; operating_income: string | null; operating_profit: string | null; net_profit: string | null; basic_eps: string | null; }
+export interface BalanceSheetSummary { report_period: string; currency: string; total_assets: string | null; total_debt: string | null; total_equity: string | null; cash: string | null; accounts_receivable: string | null; debt_to_assets_percent: string | null; }
+export interface CashFlowSummary { report_period: string; currency: string; operating_cash_flow: string | null; investing_cash_flow: string | null; financing_cash_flow: string | null; net_cash_change: string | null; }
+export interface ValuationSummary { observed_at: string | null; price_to_earnings_ttm: string | null; price_to_earnings_mrq: string | null; price_to_book_mrq: string | null; price_to_sales_ttm: string | null; price_to_cash_flow_ttm: string | null; }
+export interface TimeCatalyst { occurred_on: string; title: string; detail: string; kind: string; }
+export interface WatchlistFinancialDetail { symbol: string; market: Market; instrument_type: InstrumentType; observed_at: string; source: string; income_statement: IncomeStatementSummary | null; balance_sheet: BalanceSheetSummary | null; cash_flow: CashFlowSummary | null; valuation: ValuationSummary | null; time_catalysts: TimeCatalyst[]; notices: string[]; }
 export interface PaperPositionInput { symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; notes: string; }
 export interface PaperPosition extends PaperPositionInput { position_id: string; }
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
@@ -217,6 +223,7 @@ export const deleteWatchlistItem = (itemId: string) => request<void>(`/api/v1/wa
 export const fetchWatchlistAnalyses = () => request<WatchlistAnalysis[]>("/api/v1/watchlist/analyses");
 export const fetchWatchlistAnalysis = (itemId: string) => request<WatchlistAnalysis>(`/api/v1/watchlist/${itemId}/analysis`);
 export const refreshWatchlistAnalysis = (itemId: string) => request<WatchlistAnalysis>(`/api/v1/watchlist/${itemId}/analysis/refresh`, { method: "POST" });
+export const fetchWatchlistDeepDive = (itemId: string) => request<WatchlistFinancialDetail>(`/api/v1/watchlist/${itemId}/deep-dive`);
 export const fetchPaperPositions = () => request<PaperPosition[]>("/api/v1/paper-positions");
 export const createPaperPosition = (payload: PaperPositionInput) => request<PaperPosition>("/api/v1/paper-positions", { method: "POST", body: JSON.stringify(payload) });
 export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });

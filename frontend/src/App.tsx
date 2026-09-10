@@ -6,7 +6,8 @@ import {
   updateStrategy, fetchTechnicalStudy, TechnicalStudy, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation,
-  fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote
+  fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
+  fetchWatchlistDeepDive, WatchlistFinancialDetail
 } from "./api";
 
 type Page = "dashboard" | "watchlist" | "positions" | "funds" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
@@ -128,6 +129,7 @@ function WatchlistWorkspace() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [report, setReport] = useState<ResearchReport | null>(null);
   const [study, setStudy] = useState<TechnicalStudy | null>(null);
+  const [deepDive, setDeepDive] = useState<WatchlistFinancialDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -162,7 +164,7 @@ function WatchlistWorkspace() {
     try {
       await deleteWatchlistItem(itemId);
       if (selected?.item_id === itemId) {
-        setSelected(null); setQuote(null); setReport(null); setStudy(null);
+        setSelected(null); setQuote(null); setReport(null); setStudy(null); setDeepDive(null);
       }
       await load();
     } catch (error) {
@@ -171,18 +173,20 @@ function WatchlistWorkspace() {
   }
 
   async function selectItem(item: WatchlistItem) {
-    setSelected(item); setQuote(null); setReport(null); setStudy(null); setDetailLoading(true); setMessage(null);
-    const [quoteResult, researchResult, studyResult, analysisResult] = await Promise.allSettled([
+    setSelected(item); setQuote(null); setReport(null); setStudy(null); setDeepDive(null); setDetailLoading(true); setMessage(null);
+    const [quoteResult, researchResult, studyResult, analysisResult, deepDiveResult] = await Promise.allSettled([
       fetchQuote(item.symbol, item.market, item.instrument_type),
       fetchResearch(item.symbol, item.market, item.instrument_type),
       fetchTechnicalStudy(item.symbol, item.market, "1d", item.instrument_type),
-      fetchWatchlistAnalysis(item.item_id)
+      fetchWatchlistAnalysis(item.item_id),
+      fetchWatchlistDeepDive(item.item_id)
     ]);
     if (quoteResult.status === "fulfilled") setQuote(quoteResult.value);
     if (researchResult.status === "fulfilled") setReport(researchResult.value);
     if (studyResult.status === "fulfilled") setStudy(studyResult.value);
     if (analysisResult.status === "fulfilled") upsertAnalysis(analysisResult.value);
-    const failures = [quoteResult, researchResult, studyResult].filter((result) => result.status === "rejected");
+    if (deepDiveResult.status === "fulfilled") setDeepDive(deepDiveResult.value);
+    const failures = [quoteResult, researchResult, studyResult, deepDiveResult].filter((result) => result.status === "rejected");
     if (failures.length) setMessage("部分数据暂不可用；页面已保留能够获取的研究结果。");
     setDetailLoading(false);
   }
@@ -212,12 +216,38 @@ function WatchlistWorkspace() {
       <section className="panel"><h2>添加自选标的</h2><p>只保存你明确选择的股票、ETF 或基金；不会启动全市场扫描。</p>{message && <div className="success">{message}</div>}<form onSubmit={save}><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><InstrumentTypeField value={form.instrument_type} setValue={(instrument_type) => setForm({ ...form, instrument_type })} /><label>显示名称（可选）<input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} /></label><label>跟踪备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><button className="primary">加入自选</button></form></section>
       <section className="panel"><div className="panel-head"><div><h2>我的自选</h2><p>点击标的展开当日成交、K 线、资金、情绪与 AI 解读。</p></div><button className="secondary" onClick={() => void load()}>刷新列表</button></div><div className="watchlist-cards">{items.map((item) => { const analysis = analyses.find((entry) => entry.watchlist_item_id === item.item_id); return <article className={selected?.item_id === item.item_id ? "watch-item selected" : "watch-item"} key={item.item_id}><button className="watch-item-main" onClick={() => void selectItem(item)}><strong>{item.label || item.symbol}</strong><p>{item.symbol} · {item.market} · {item.instrument_type}</p><div className="tag-list">{analysis ? analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>) : <span className="tag neutral">等待定时分析</span>}</div>{analysis && <small>更新于 {new Date(analysis.observed_at).toLocaleString()} · {analysis.status}</small>}{item.notes && <small>{item.notes}</small>}</button><div className="watch-item-actions"><button className="secondary" onClick={() => void refreshAnalysis(item)} disabled={refreshing}>{refreshing ? "分析中…" : "更新解读"}</button><button className="secondary" onClick={() => void remove(item.item_id)}>移除</button></div></article>; })}</div></section>
     </section>
-    {selected && <WatchlistDetail item={selected} quote={quote} report={report} study={study} analysis={selectedAnalysis} loading={detailLoading} onRefresh={() => void refreshAnalysis(selected)} refreshing={refreshing} />}
+    {selected && <WatchlistDetail item={selected} quote={quote} report={report} study={study} analysis={selectedAnalysis} deepDive={deepDive} loading={detailLoading} onRefresh={() => void refreshAnalysis(selected)} refreshing={refreshing} />}
   </section>;
 }
 
-function WatchlistDetail({ item, quote, report, study, analysis, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
-  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">RESEARCH ANALYSIS · DEEP TRACKING</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="最新分析" value={analysis ? new Date(analysis.observed_at).toLocaleTimeString() : "等待首次分析"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{report && <section className="deep-research-section"><div><p className="eyebrow">RESEARCH ANALYSIS</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} />{report.fund_research && <DataCard title="基金 / ETF 专项数据" data={report.fund_research} />}</div>{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}{study && <section className="deep-research-section"><div><p className="eyebrow">DEEP TRACKING</p><h3>深度跟踪</h3></div><TechnicalStudyView study={study} /></section>}</section>;
+function WatchlistDetail({ item, quote, report, study, analysis, deepDive, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; deepDive: WatchlistFinancialDetail | null; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
+  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">RESEARCH ANALYSIS · DEEP TRACKING</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="今日成交量" value={quote?.volume ?? "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{deepDive && <FinancialDeepDive detail={deepDive} />}{report && <section className="deep-research-section"><div><p className="eyebrow">RESEARCH ANALYSIS</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /></div>{report.fund_research && <FundWatchlistDetail data={report.fund_research} />}{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}{study && <section className="deep-research-section"><div><p className="eyebrow">DEEP TRACKING</p><h3>深度跟踪：K 线与成交量</h3></div><TechnicalStudyView study={study} /></section>}</section>;
+}
+
+function FinancialDeepDive({ detail }: { detail: WatchlistFinancialDetail }) {
+  const income = detail.income_statement;
+  const balance = detail.balance_sheet;
+  const cashFlow = detail.cash_flow;
+  const valuation = detail.valuation;
+  const hasCompanyData = income || balance || cashFlow || valuation;
+  return <section className="deep-research-section financial-deep-dive"><div><p className="eyebrow">PUBLISHED FINANCIAL DETAIL</p><h3>财务、估值与时间催化剂</h3><p className="muted">数据源：{detail.source} · 更新于 {new Date(detail.observed_at).toLocaleString()}。财报为已披露口径，时间催化剂不推断未来事件。</p></div>{hasCompanyData && <div className="financial-section-grid">{income && <FinancialMetricCard title="利润表" caption={`报告期 ${income.report_period} · 披露 ${income.announced_on}`} metrics={[['营业收入', income.operating_income], ['营业利润', income.operating_profit], ['净利润', income.net_profit], ['基本每股收益', income.basic_eps]]} />}{cashFlow && <FinancialMetricCard title="现金流" caption={`报告期 ${cashFlow.report_period}`} metrics={[['经营活动现金流', cashFlow.operating_cash_flow], ['投资活动现金流', cashFlow.investing_cash_flow], ['筹资活动现金流', cashFlow.financing_cash_flow], ['现金净增加额', cashFlow.net_cash_change]]} />}{balance && <FinancialMetricCard title="资产负债结构" caption={`报告期 ${balance.report_period}`} metrics={[['资产总计', balance.total_assets], ['负债合计', balance.total_debt], ['所有者权益', balance.total_equity], ['货币资金', balance.cash], ['应收账款', balance.accounts_receivable], ['资产负债率', balance.debt_to_assets_percent, '%']]} />}{valuation && <FinancialMetricCard title="估值定价" caption={valuation.observed_at ? `快照 ${new Date(valuation.observed_at).toLocaleString()}` : '快照时间未提供'} metrics={[['PE (TTM)', valuation.price_to_earnings_ttm], ['PE (MRQ)', valuation.price_to_earnings_mrq], ['PB (MRQ)', valuation.price_to_book_mrq], ['PS (TTM)', valuation.price_to_sales_ttm], ['PCF (TTM)', valuation.price_to_cash_flow_ttm]]} />}</div>}{detail.time_catalysts.length > 0 && <section className="catalyst-list"><h4>时间催化剂（已披露）</h4>{detail.time_catalysts.map((item) => <article className="catalyst-item" key={`${item.kind}-${item.occurred_on}-${item.title}`}><time>{item.occurred_on}</time><div><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</section>}{detail.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>;
+}
+
+function FundWatchlistDetail({ data }: { data: Record<string, unknown> }) {
+  return <section className="fund-watchlist-detail"><div><p className="eyebrow">FUND / ETF DISCLOSED DATA</p><h4>基金 / ETF 披露研究</h4><p className="muted">净值、持仓、资产配置、财务与资讯均以公开披露时间为准，不代表实时持仓或资金流。</p></div><div className="financial-section-grid"><DataCard title="基本资料与最新净值" data={asRecord(data.overview)} /><DataCard title="收益与回撤" data={{ returns_percent: data.returns_percent, drawdowns_percent: data.drawdowns_percent }} /><DataCard title="重仓持仓" data={{ holdings: data.holdings }} /><DataCard title="持仓与资产配置" data={{ asset_allocations: data.asset_allocations, institutional_holding_percent: data.institutional_holding_percent }} /><DataCard title="财务与诊断" data={{ latest_financials: data.latest_financials, diagnostics: data.diagnostics }} /><DataCard title="基金资讯列表" data={{ news: data.news }} /></div>{Array.isArray(data.limitations) && data.limitations.map((notice) => <div className="notice" key={String(notice)}>{String(notice)}</div>)}</section>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function FinancialMetricCard({ title, caption, metrics }: { title: string; caption: string; metrics: Array<[string, string | null, string?]> }) {
+  return <article className="financial-metric-card"><h4>{title}</h4><small>{caption}</small><dl>{metrics.map(([label, value, suffix]) => <div key={label}><dt>{label}</dt><dd>{value === null ? '—' : `${formatFinancialValue(value)}${suffix ?? ''}`}</dd></div>)}</dl></article>;
+}
+
+function formatFinancialValue(value: string) {
+  const number = Number(value);
+  return Number.isFinite(number) ? new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(number) : value;
 }
 
 function PaperPortfolioWorkspace() {
