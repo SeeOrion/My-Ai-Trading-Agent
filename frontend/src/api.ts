@@ -141,6 +141,19 @@ export interface DisciplineDecision {
 
 export interface WatchlistInput { symbol: string; market: Market; instrument_type: InstrumentType; label: string; notes: string; }
 export interface WatchlistItem extends WatchlistInput { item_id: string; }
+export interface WatchlistAnalysisTag { category: string; label: string; tone: "positive" | "negative" | "neutral" | "info"; }
+export interface WatchlistAnalysis {
+  analysis_id: string;
+  watchlist_item_id: string;
+  symbol: string;
+  market: Market;
+  instrument_type: InstrumentType;
+  observed_at: string;
+  status: "completed" | "partial" | "failed";
+  tags: WatchlistAnalysisTag[];
+  ai_summary: string | null;
+  notices: string[];
+}
 export interface PaperPositionInput { symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; notes: string; }
 export interface PaperPosition extends PaperPositionInput { position_id: string; }
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
@@ -201,6 +214,9 @@ export const updateDiscipline = (disciplineId: string, payload: DisciplineInput)
 export const fetchWatchlist = () => request<WatchlistItem[]>("/api/v1/watchlist");
 export const createWatchlistItem = (payload: WatchlistInput) => request<WatchlistItem>("/api/v1/watchlist", { method: "POST", body: JSON.stringify(payload) });
 export const deleteWatchlistItem = (itemId: string) => request<void>(`/api/v1/watchlist/${itemId}`, { method: "DELETE" });
+export const fetchWatchlistAnalyses = () => request<WatchlistAnalysis[]>("/api/v1/watchlist/analyses");
+export const fetchWatchlistAnalysis = (itemId: string) => request<WatchlistAnalysis>(`/api/v1/watchlist/${itemId}/analysis`);
+export const refreshWatchlistAnalysis = (itemId: string) => request<WatchlistAnalysis>(`/api/v1/watchlist/${itemId}/analysis/refresh`, { method: "POST" });
 export const fetchPaperPositions = () => request<PaperPosition[]>("/api/v1/paper-positions");
 export const createPaperPosition = (payload: PaperPositionInput) => request<PaperPosition>("/api/v1/paper-positions", { method: "POST", body: JSON.stringify(payload) });
 export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });

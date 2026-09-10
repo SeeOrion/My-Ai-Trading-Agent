@@ -1,20 +1,20 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
   askAssistant, createDiscipline, createStrategy, Discipline, DisciplineDecision, DisciplineInput, fetchDisciplines,
-  fetchFactors, fetchNews, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
+  fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
   ResearchReport, Strategy, StrategyInput, updateDiscipline, InstrumentType, FundResearch, fetchFundResearch,
-  updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
+  updateStrategy, fetchTechnicalStudy, TechnicalStudy, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
-  createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation
+  createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation,
+  fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote
 } from "./api";
 
-type Page = "dashboard" | "watchlist" | "positions" | "tracking" | "funds" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
+type Page = "dashboard" | "watchlist" | "positions" | "funds" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
   { id: "dashboard", label: "总览", description: "AI 研究对话与自选标的" },
-  { id: "watchlist", label: "自选股票", description: "只跟踪你主动关注的标的" },
+  { id: "watchlist", label: "自选跟踪", description: "标签化解读与单标的深度研究" },
   { id: "positions", label: "模拟持仓", description: "手动成本、数量与未实现盈亏" },
-  { id: "tracking", label: "深度跟踪", description: "K 线、指标、资金与筹码分布" },
   { id: "funds", label: "基金 / ETF", description: "净值、收益、持仓、回撤与基金资讯" },
   { id: "news", label: "财经资讯", description: "公开资讯与情绪" },
   { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
@@ -63,7 +63,6 @@ function App() {
       {page === "dashboard" && <Dashboard strategies={strategies} />}
       {page === "watchlist" && <WatchlistWorkspace />}
       {page === "positions" && <PaperPortfolioWorkspace />}
-      {page === "tracking" && <TechnicalWorkspace />}
       {page === "funds" && <FundWorkspace />}
       {page === "news" && <NewsWorkspace />}
       {page === "research" && <ResearchWorkspace />}
@@ -107,12 +106,104 @@ const defaultWatchlist: WatchlistInput = { symbol: "600519.SH", market: "a_share
 const defaultPaperPosition: PaperPositionInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", quantity: "100", average_cost: "100", notes: "仅用于模拟，不连接券商。" };
 
 function WatchlistWorkspace() {
-  const [items, setItems] = useState<WatchlistItem[]>([]); const [form, setForm] = useState(defaultWatchlist); const [message, setMessage] = useState<string | null>(null);
-  const load = () => fetchWatchlist().then(setItems).catch((error: Error) => setMessage(error.message));
-  useEffect(() => { load(); }, []);
-  async function save(event: FormEvent) { event.preventDefault(); try { await createWatchlistItem(form); setForm(defaultWatchlist); setMessage("已加入自选；不会启动全市场扫描。"); load(); } catch (error) { setMessage(error instanceof Error ? error.message : "保存失败"); } }
-  async function remove(itemId: string) { try { await deleteWatchlistItem(itemId); load(); } catch (error) { setMessage(error instanceof Error ? error.message : "删除失败"); } }
-  return <section className="portfolio-layout"><section className="panel"><h2>添加自选标的</h2><p>只保存你明确选择的股票、ETF 或基金，后续可逐一研究。</p>{message && <div className="success">{message}</div>}<form onSubmit={save}><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><InstrumentTypeField value={form.instrument_type} setValue={(instrument_type) => setForm({ ...form, instrument_type })} /><label>显示名称（可选）<input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} /></label><label>跟踪备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><button className="primary">加入自选</button></form></section><section className="panel"><div className="panel-head"><div><h2>我的自选</h2><p>共 {items.length} 个标的</p></div><button className="secondary" onClick={load}>刷新列表</button></div><div className="watchlist-cards">{items.map((item) => <article className="watch-item" key={item.item_id}><div><strong>{item.label || item.symbol}</strong><p>{item.symbol} · {item.market} · {item.instrument_type}</p>{item.notes && <small>{item.notes}</small>}</div><button className="secondary" onClick={() => remove(item.item_id)}>移除</button></article>)}</div></section></section>;
+  const [items, setItems] = useState<WatchlistItem[]>([]);
+  const [analyses, setAnalyses] = useState<WatchlistAnalysis[]>([]);
+  const [form, setForm] = useState(defaultWatchlist);
+  const [message, setMessage] = useState<string | null>(null);
+  const [selected, setSelected] = useState<WatchlistItem | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [report, setReport] = useState<ResearchReport | null>(null);
+  const [study, setStudy] = useState<TechnicalStudy | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function load() {
+    try {
+      const [watchlist, savedAnalyses] = await Promise.all([
+        fetchWatchlist(),
+        fetchWatchlistAnalyses().catch(() => [] as WatchlistAnalysis[])
+      ]);
+      setItems(watchlist);
+      setAnalyses(savedAnalyses);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "自选列表读取失败");
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    try {
+      await createWatchlistItem(form);
+      setForm(defaultWatchlist);
+      setMessage("已加入自选。后台将仅对你的自选标的定时更新标签与 AI 解读。");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存失败");
+    }
+  }
+
+  async function remove(itemId: string) {
+    try {
+      await deleteWatchlistItem(itemId);
+      if (selected?.item_id === itemId) {
+        setSelected(null); setQuote(null); setReport(null); setStudy(null);
+      }
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "删除失败");
+    }
+  }
+
+  async function selectItem(item: WatchlistItem) {
+    setSelected(item); setQuote(null); setReport(null); setStudy(null); setDetailLoading(true); setMessage(null);
+    const [quoteResult, researchResult, studyResult, analysisResult] = await Promise.allSettled([
+      fetchQuote(item.symbol, item.market, item.instrument_type),
+      fetchResearch(item.symbol, item.market, item.instrument_type),
+      fetchTechnicalStudy(item.symbol, item.market, "1d", item.instrument_type),
+      fetchWatchlistAnalysis(item.item_id)
+    ]);
+    if (quoteResult.status === "fulfilled") setQuote(quoteResult.value);
+    if (researchResult.status === "fulfilled") setReport(researchResult.value);
+    if (studyResult.status === "fulfilled") setStudy(studyResult.value);
+    if (analysisResult.status === "fulfilled") upsertAnalysis(analysisResult.value);
+    const failures = [quoteResult, researchResult, studyResult].filter((result) => result.status === "rejected");
+    if (failures.length) setMessage("部分数据暂不可用；页面已保留能够获取的研究结果。");
+    setDetailLoading(false);
+  }
+
+  function upsertAnalysis(analysis: WatchlistAnalysis) {
+    setAnalyses((current) => [analysis, ...current.filter((item) => item.watchlist_item_id !== analysis.watchlist_item_id)]);
+  }
+
+  async function refreshAnalysis(item: WatchlistItem) {
+    setRefreshing(true); setMessage(null);
+    try {
+      const analysis = await refreshWatchlistAnalysis(item.item_id);
+      upsertAnalysis(analysis);
+      setMessage("已更新该自选标的的标签与 AI 研究摘要。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "自选分析刷新失败");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const selectedAnalysis = selected
+    ? analyses.find((item) => item.watchlist_item_id === selected.item_id) ?? null
+    : null;
+  return <section className="watchlist-workspace">
+    <section className="portfolio-layout">
+      <section className="panel"><h2>添加自选标的</h2><p>只保存你明确选择的股票、ETF 或基金；不会启动全市场扫描。</p>{message && <div className="success">{message}</div>}<form onSubmit={save}><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><InstrumentTypeField value={form.instrument_type} setValue={(instrument_type) => setForm({ ...form, instrument_type })} /><label>显示名称（可选）<input value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} /></label><label>跟踪备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><button className="primary">加入自选</button></form></section>
+      <section className="panel"><div className="panel-head"><div><h2>我的自选</h2><p>点击标的展开当日成交、K 线、资金、情绪与 AI 解读。</p></div><button className="secondary" onClick={() => void load()}>刷新列表</button></div><div className="watchlist-cards">{items.map((item) => { const analysis = analyses.find((entry) => entry.watchlist_item_id === item.item_id); return <article className={selected?.item_id === item.item_id ? "watch-item selected" : "watch-item"} key={item.item_id}><button className="watch-item-main" onClick={() => void selectItem(item)}><strong>{item.label || item.symbol}</strong><p>{item.symbol} · {item.market} · {item.instrument_type}</p><div className="tag-list">{analysis ? analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>) : <span className="tag neutral">等待定时分析</span>}</div>{analysis && <small>更新于 {new Date(analysis.observed_at).toLocaleString()} · {analysis.status}</small>}{item.notes && <small>{item.notes}</small>}</button><div className="watch-item-actions"><button className="secondary" onClick={() => void refreshAnalysis(item)} disabled={refreshing}>{refreshing ? "分析中…" : "更新解读"}</button><button className="secondary" onClick={() => void remove(item.item_id)}>移除</button></div></article>; })}</div></section>
+    </section>
+    {selected && <WatchlistDetail item={selected} quote={quote} report={report} study={study} analysis={selectedAnalysis} loading={detailLoading} onRefresh={() => void refreshAnalysis(selected)} refreshing={refreshing} />}
+  </section>;
+}
+
+function WatchlistDetail({ item, quote, report, study, analysis, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
+  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">FOCUSED WATCHLIST STUDY</p><h2>{item.label || item.symbol}</h2><p>仅拉取此自选标的的数据；所有交易决策仍须由你手动复核。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="最新分析" value={analysis ? new Date(analysis.observed_at).toLocaleTimeString() : "等待首次分析"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{report && <div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /></div>}{study && <TechnicalStudyView study={study} />}</section>;
 }
 
 function PaperPortfolioWorkspace() {
@@ -123,14 +214,6 @@ function PaperPortfolioWorkspace() {
   async function value() { setRefreshing(true); try { setValuations(await fetchPaperValuations()); } catch (error) { setMessage(error instanceof Error ? error.message : "估值失败"); } finally { setRefreshing(false); } }
   async function remove(positionId: string) { try { await deletePaperPosition(positionId); setValuations((current) => current.filter((item) => item.position_id !== positionId)); load(); } catch (error) { setMessage(error instanceof Error ? error.message : "删除失败"); } }
   return <section className="portfolio-layout"><section className="panel"><h2>录入模拟持仓</h2><p>输入的是你的模拟数量和平均成本；未实现盈亏以主动刷新时的最新行情或净值计算。</p>{message && <div className="success">{message}</div>}<form onSubmit={save}><TickerFields symbol={form.symbol} market={form.market} setSymbol={(symbol) => setForm({ ...form, symbol })} setMarket={(market) => setForm({ ...form, market })} /><InstrumentTypeField value={form.instrument_type} setValue={(instrument_type) => setForm({ ...form, instrument_type })} /><div className="form-row"><label>数量<input type="number" min="0.000001" step="any" value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></label><label>平均成本<input type="number" min="0.000001" step="any" value={form.average_cost} onChange={(event) => setForm({ ...form, average_cost: event.target.value })} /></label></div><label>备注<textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} /></label><button className="primary">保存模拟持仓</button></form></section><section className="panel"><div className="panel-head"><div><h2>模拟盈亏</h2><p>{positions.length} 个手动录入持仓；不含佣金、税费、分红或汇率换算。</p></div><button className="primary" onClick={value} disabled={refreshing}>{refreshing ? "刷新中…" : "刷新模拟估值"}</button></div><div className="position-list">{positions.map((item) => { const valuation = valuations.find((entry) => entry.position_id === item.position_id); return <article className="position-item" key={item.position_id}><div><strong>{item.symbol}</strong><p>数量 {item.quantity} · 成本 {item.average_cost}</p>{valuation ? <small>现价 {valuation.last_price} {valuation.currency} · 市值 {valuation.market_value}</small> : <small>点击“刷新模拟估值”计算行情与盈亏</small>}</div>{valuation && <strong className={Number(valuation.unrealized_pnl) >= 0 ? "profit up" : "profit down"}>{Number(valuation.unrealized_pnl).toFixed(2)}<small> ({Number(valuation.unrealized_pnl_percent).toFixed(2)}%)</small></strong>}<button className="secondary" onClick={() => remove(item.position_id)}>删除</button></article>; })}</div></section></section>;
-}
-
-function TechnicalWorkspace() {
-  const [symbol, setSymbol] = useState("600519.SH"); const [market, setMarket] = useState<Market>("a_share"); const [timeframe, setTimeframe] = useState<TechnicalTimeframe>("1d");
-  const [instrumentType, setInstrumentType] = useState<InstrumentType>("equity");
-  const [study, setStudy] = useState<TechnicalStudy | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setStudy(await fetchTechnicalStudy(symbol, market, timeframe, instrumentType)); } catch (reason) { setError(reason instanceof Error ? reason.message : "技术研究请求失败"); } finally { setLoading(false); } }
-  return <section className="panel technical-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>分析周期<select value={timeframe} onChange={(event) => setTimeframe(event.target.value as TechnicalTimeframe)}><option value="1d">日 K</option><option value="1w">周 K</option><option value="1m">月 K</option></select></label><button className="primary" disabled={loading}>{loading ? "正在计算…" : "跟踪此标的"}</button></form>{error && <div className="notice">{error}</div>}{study && <TechnicalStudyView study={study} />}</section>;
 }
 
 function FundWorkspace() {
