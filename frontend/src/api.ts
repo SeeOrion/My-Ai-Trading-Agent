@@ -27,6 +27,14 @@ export interface Quote {
   volume: string | null;
 }
 
+export interface InstrumentIdentity {
+  symbol: string;
+  market: Market;
+  instrument_type: InstrumentType;
+  display_name: string | null;
+  source: string | null;
+}
+
 export interface MarketIndexSnapshot {
   symbol: string;
   name: string;
@@ -151,7 +159,7 @@ export interface Discipline extends DisciplineInput {
 }
 
 export interface WatchlistInput { symbol: string; market: Market; instrument_type: InstrumentType; label: string; notes: string; }
-export interface WatchlistItem extends WatchlistInput { item_id: string; }
+export interface WatchlistItem extends WatchlistInput { item_id: string; display_name: string | null; }
 export interface WatchlistAnalysisTag { category: string; label: string; tone: "positive" | "negative" | "neutral" | "info"; }
 export interface WatchlistAnalysis {
   analysis_id: string;
@@ -172,7 +180,7 @@ export interface ValuationSummary { observed_at: string | null; price_to_earning
 export interface TimeCatalyst { occurred_on: string; title: string; detail: string; kind: string; }
 export interface WatchlistFinancialDetail { symbol: string; market: Market; instrument_type: InstrumentType; observed_at: string; source: string; income_statement: IncomeStatementSummary | null; balance_sheet: BalanceSheetSummary | null; cash_flow: CashFlowSummary | null; valuation: ValuationSummary | null; time_catalysts: TimeCatalyst[]; notices: string[]; }
 export interface PaperPositionInput { symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; notes: string; }
-export interface PaperPosition extends PaperPositionInput { position_id: string; }
+export interface PaperPosition extends PaperPositionInput { position_id: string; display_name: string | null; }
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -195,6 +203,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchFactors = () => request<Factor[]>("/api/v1/factors");
 export const fetchQuote = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
   request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
+export const resolveInstrument = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
+  request<InstrumentIdentity>("/api/v1/instruments/resolve", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
 export const fetchPostMarketBrief = (refresh = false) =>
   request<PostMarketBrief>(`/api/v1/market/post-market-brief?refresh=${refresh}`);
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
