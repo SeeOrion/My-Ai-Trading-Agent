@@ -1,19 +1,19 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
-  askAssistant, createDiscipline, createStrategy, Discipline, DisciplineDecision, DisciplineInput, fetchDisciplines,
+  createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
   ResearchReport, Strategy, StrategyInput, updateDiscipline, InstrumentType, FundResearch, fetchFundResearch,
   updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
-  fetchWatchlistDeepDive, WatchlistFinancialDetail
+  fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief
 } from "./api";
 
 type Page = "dashboard" | "watchlist" | "positions" | "funds" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
-  { id: "dashboard", label: "总览", description: "AI 研究对话与财经资讯" },
+  { id: "dashboard", label: "总览", description: "盘后快报、指数总览、板块轮动与财经资讯" },
   { id: "watchlist", label: "自选跟踪", description: "研究分析与单标的深度跟踪" },
   { id: "positions", label: "模拟持仓", description: "手动成本、数量与未实现盈亏" },
   { id: "funds", label: "基金 / ETF", description: "净值、收益、持仓、回撤与基金资讯" },
@@ -59,7 +59,7 @@ function App() {
     </aside>
     <section className="content">
       <header><div><p className="eyebrow">RESEARCH WORKSPACE</p><h1>{active.label}</h1><p>{active.description}</p></div><span className="pill">本机服务已连接</span></header>
-      {page === "dashboard" && <Dashboard strategies={strategies} />}
+      {page === "dashboard" && <Dashboard />}
       {page === "watchlist" && <WatchlistWorkspace />}
       {page === "positions" && <PaperPortfolioWorkspace />}
       {page === "funds" && <FundWorkspace />}
@@ -78,27 +78,36 @@ function InstrumentTypeField({ value, setValue }: { value: InstrumentType; setVa
   return <label>类别<select value={value} onChange={(event) => setValue(event.target.value as InstrumentType)}><option value="equity">股票</option><option value="etf">ETF（场内）</option><option value="fund">公募基金（场外）</option></select></label>;
 }
 
-function Dashboard({ strategies }: { strategies: Strategy[] }) {
-  const [question, setQuestion] = useState("请结合今日行情、财经资讯和我的策略分析这个标的。");
-  const [symbol, setSymbol] = useState("600519.SH");
-  const [market, setMarket] = useState<Market>("a_share");
-  const [instrumentType, setInstrumentType] = useState<InstrumentType>("equity");
-  const [strategyId, setStrategyId] = useState("");
-  const [answer, setAnswer] = useState<string | null>(null);
-  const [status, setStatus] = useState<string[]>([]);
-  const [decisions, setDecisions] = useState<DisciplineDecision[]>([]);
+function Dashboard() {
+  const [brief, setBrief] = useState<PostMarketBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setLoading(true); setError(null); setAnswer(null); setDecisions([]);
-    try { const result = await askAssistant({ question, symbol, market, instrument_type: instrumentType, strategy_id: strategyId || undefined }); setAnswer(result.answer); setStatus(result.context_status); setDecisions(result.discipline_decisions ?? []); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "AI 请求失败"); }
+  async function load(refresh = false) {
+    setLoading(true); setError(null);
+    try { setBrief(await fetchPostMarketBrief(refresh)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "盘后快报请求失败"); }
     finally { setLoading(false); }
   }
-  return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>个人纪律状态由后端价位规则计算；AI 仅结合行情、资讯、研究和已选策略解释依据。浏览器不会接触任何密钥。</p></div></section>
-    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "获取 AI 解读与纪律状态"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer">{decisions.length > 0 && <section className="decision-list"><p className="eyebrow">PERSONAL DISCIPLINE STATUS</p>{decisions.map((decision) => <article className={`decision-card ${decision.status}`} key={decision.discipline_id}><div><strong>{decision.label}</strong><p>{decision.discipline_name} · 现价 {decision.last_price}</p></div><small>{decision.rationale}</small></article>)}</section>}<p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>纪律状态仅供你手动复核；研究结果不构成投资或交易指令，系统不会自动下单。</small></article>}</section>
+  useEffect(() => { void load(); }, []);
+  return <><section className="hero"><div><p className="eyebrow">POST-MARKET BRIEF</p><h2>今日市场快报</h2><p>从同花顺指数快照汇总主要指数和行业板块涨跌。盘中访问时为最新快照，收盘后可作为当日复盘入口。</p></div><button className="primary" onClick={() => void load(true)} disabled={loading}>{loading ? "更新中…" : "刷新快报"}</button></section>
+    <section className="panel market-brief-panel"><div className="panel-head"><div><p className="eyebrow">INDEX OVERVIEW</p><h2>指数总览</h2><p>上证、深成、创业板和沪深 300。</p></div>{brief && <small className="brief-time">快照于 {new Date(brief.observed_at).toLocaleString()}</small>}</div>{error && <div className="notice">{error}</div>}{brief && <><div className="index-grid">{brief.indices.map((item) => <article className="index-card" key={item.symbol}><small>{item.name}</small><strong>{item.last_price}</strong><span className={Number(item.change_percent) > 0 ? "change up" : Number(item.change_percent) < 0 ? "change down" : "change"}>{formatPercent(item.change_percent)} {item.price_change !== null ? `(${formatSigned(item.price_change)})` : ""}</span></article>)}</div><section className="rotation-section"><div><p className="eyebrow">SECTOR ROTATION</p><h2>板块轮动</h2><p>按行业指数当日涨跌幅排序，不等同于资金流向。</p></div><div className="rotation-grid"><RotationList title="领涨板块" items={brief.leading_sectors} tone="up" /><RotationList title="领跌板块" items={brief.lagging_sectors} tone="down" /></div></section><p className="brief-note">{brief.coverage}<br />{brief.disclaimer}</p></>}</section>
     <OverviewNews />
   </>;
+}
+
+function RotationList({ title, items, tone }: { title: string; items: PostMarketBrief["leading_sectors"]; tone: "up" | "down" }) {
+  return <section className={`rotation-list ${tone}`}><h3>{title}</h3>{items.map((item) => <article key={item.symbol}><div><strong>{item.name}</strong><small>{item.symbol}</small></div><span className={`change ${tone}`}>{formatPercent(item.change_percent)}</span></article>)}</section>;
+}
+
+function formatPercent(value: string | null) {
+  if (value === null) return "--";
+  const number = Number(value);
+  return `${number > 0 ? "+" : ""}${number.toFixed(2)}%`;
+}
+
+function formatSigned(value: string) {
+  const number = Number(value);
+  return `${number > 0 ? "+" : ""}${number.toFixed(2)}`;
 }
 
 function OverviewNews() {
@@ -295,7 +304,7 @@ function TechnicalStudyView({ study }: { study: TechnicalStudy }) {
   const indicators = study.indicators; const profile = study.volume_profile;
   const maxVolume = Math.max(...profile.levels.map((level) => Number(level.volume)), 1);
   const periodLabel = study.timeframe === "1d" ? "日 K" : study.timeframe === "1w" ? "周 K" : "月 K";
-  return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {periodLabel}</h2><p>来源：{study.source}。A 股/ETF 使用真实日线后按周或月聚合；不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><div className="panel-head"><div><h3>{periodLabel}与均线</h3><p className="muted">蜡烛为 OHLC，底部柱体为成交量；均线基于当前所选周期的收盘价计算。</p></div><div className="ma-legend"><span className="ma5">MA5</span><span className="ma10">MA10</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div></div><CandlestickChart bars={study.bars} /><div className="indicator-row">最新 MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>AI 提问时可直接填写相同标的，系统会结合行情、资讯、基本面与个人策略补充解读。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
+  return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {periodLabel}</h2><p>来源：{study.source}。A 股/ETF 使用真实日线后按周或月聚合；不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><div className="panel-head"><div><h3>{periodLabel}与均线</h3><p className="muted">蜡烛为 OHLC，底部柱体为成交量；均线基于当前所选周期的收盘价计算。</p></div><div className="ma-legend"><span className="ma5">MA5</span><span className="ma10">MA10</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div></div><CandlestickChart bars={study.bars} /><div className="indicator-row">最新 MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>自选标的的 AI 解读会结合行情、资讯、基本面与个人策略补充研究依据。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
 }
 
 function CandlestickChart({ bars }: { bars: TechnicalStudy["bars"] }) {

@@ -27,6 +27,31 @@ export interface Quote {
   volume: string | null;
 }
 
+export interface MarketIndexSnapshot {
+  symbol: string;
+  name: string;
+  last_price: string;
+  price_change: string | null;
+  change_percent: string | null;
+}
+
+export interface SectorRotationItem {
+  symbol: string;
+  name: string;
+  last_price: string;
+  change_percent: string;
+}
+
+export interface PostMarketBrief {
+  observed_at: string;
+  source: string;
+  indices: MarketIndexSnapshot[];
+  leading_sectors: SectorRotationItem[];
+  lagging_sectors: SectorRotationItem[];
+  coverage: string;
+  disclaimer: string;
+}
+
 export type CandidateRanking = "composite" | "momentum" | "balanced_entry";
 
 export interface MarketCandidate {
@@ -125,20 +150,6 @@ export interface Discipline extends DisciplineInput {
   version: number;
 }
 
-export type DisciplineDecisionStatus = "observe" | "buy_candidate" | "add_condition_met" | "take_profit" | "exit";
-export interface DisciplineDecision {
-  discipline_id: string;
-  discipline_name: string;
-  symbol: string;
-  market: Market;
-  instrument_type: InstrumentType;
-  status: DisciplineDecisionStatus;
-  label: string;
-  last_price: string;
-  matched_level: string | null;
-  rationale: string;
-}
-
 export interface WatchlistInput { symbol: string; market: Market; instrument_type: InstrumentType; label: string; notes: string; }
 export interface WatchlistItem extends WatchlistInput { item_id: string; }
 export interface WatchlistAnalysisTag { category: string; label: string; tone: "positive" | "negative" | "neutral" | "info"; }
@@ -164,13 +175,6 @@ export interface PaperPositionInput { symbol: string; market: Market; instrument
 export interface PaperPosition extends PaperPositionInput { position_id: string; }
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; }
 
-export interface ChatResult {
-  answer: string;
-  context_status: string[];
-  discipline_decisions?: DisciplineDecision[];
-  disclaimer: string;
-}
-
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {}
@@ -191,6 +195,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchFactors = () => request<Factor[]>("/api/v1/factors");
 export const fetchQuote = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
   request<Quote>("/api/v1/market/quote", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
+export const fetchPostMarketBrief = (refresh = false) =>
+  request<PostMarketBrief>(`/api/v1/market/post-market-brief?refresh=${refresh}`);
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
   request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
 export const runMarketScan = (market: Market) =>
@@ -228,10 +234,3 @@ export const fetchPaperPositions = () => request<PaperPosition[]>("/api/v1/paper
 export const createPaperPosition = (payload: PaperPositionInput) => request<PaperPosition>("/api/v1/paper-positions", { method: "POST", body: JSON.stringify(payload) });
 export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });
 export const fetchPaperValuations = () => request<PaperPositionValuation[]>("/api/v1/paper-positions/valuations");
-export const askAssistant = (payload: {
-  question: string;
-  symbol?: string;
-  market?: Market;
-  instrument_type?: InstrumentType;
-  strategy_id?: string;
-}) => request<ChatResult>("/api/v1/assistant/chat", { method: "POST", body: JSON.stringify(payload) });
