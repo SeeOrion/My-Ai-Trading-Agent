@@ -9,15 +9,13 @@ import {
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote
 } from "./api";
 
-type Page = "dashboard" | "watchlist" | "positions" | "funds" | "news" | "research" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
+type Page = "dashboard" | "watchlist" | "positions" | "funds" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
 
 const navigation: Array<{ id: Page; label: string; description: string }> = [
-  { id: "dashboard", label: "总览", description: "AI 研究对话与自选标的" },
-  { id: "watchlist", label: "自选跟踪", description: "标签化解读与单标的深度研究" },
+  { id: "dashboard", label: "总览", description: "AI 研究对话与财经资讯" },
+  { id: "watchlist", label: "自选跟踪", description: "研究分析与单标的深度跟踪" },
   { id: "positions", label: "模拟持仓", description: "手动成本、数量与未实现盈亏" },
   { id: "funds", label: "基金 / ETF", description: "净值、收益、持仓、回撤与基金资讯" },
-  { id: "news", label: "财经资讯", description: "公开资讯与情绪" },
-  { id: "research", label: "研究分析", description: "基本面、情绪、资金流、期权" },
   { id: "strategies", label: "个人策略", description: "编辑、注入、版本" },
   { id: "disciplines", label: "个人纪律", description: "价位、仓位与退出规则" },
   { id: "documents", label: "文档 / OCR", description: "研报与证据提取" },
@@ -64,8 +62,6 @@ function App() {
       {page === "watchlist" && <WatchlistWorkspace />}
       {page === "positions" && <PaperPortfolioWorkspace />}
       {page === "funds" && <FundWorkspace />}
-      {page === "news" && <NewsWorkspace />}
-      {page === "research" && <ResearchWorkspace />}
       {page === "strategies" && <StrategyWorkspace factors={factors} strategies={strategies} error={strategyError} reload={reloadStrategies} />}
       {page === "disciplines" && <DisciplineWorkspace disciplines={disciplines} error={disciplineError} reload={reloadDisciplines} />}
       {["documents", "journal", "settings"].includes(page) && <FutureWorkspace page={active.label} />}
@@ -99,7 +95,25 @@ function Dashboard({ strategies }: { strategies: Strategy[] }) {
     finally { setLoading(false); }
   }
   return <><section className="hero"><div><p className="eyebrow">SOURCE-GROUNDED AI</p><h2>问问今天的市场</h2><p>个人纪律状态由后端价位规则计算；AI 仅结合行情、资讯、研究和已选策略解释依据。浏览器不会接触任何密钥。</p></div></section>
-    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "获取 AI 解读与纪律状态"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer">{decisions.length > 0 && <section className="decision-list"><p className="eyebrow">PERSONAL DISCIPLINE STATUS</p>{decisions.map((decision) => <article className={`decision-card ${decision.status}`} key={decision.discipline_id}><div><strong>{decision.label}</strong><p>{decision.discipline_name} · 现价 {decision.last_price}</p></div><small>{decision.rationale}</small></article>)}</section>}<p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>纪律状态仅供你手动复核；研究结果不构成投资或交易指令，系统不会自动下单。</small></article>}</section></>;
+    <section className="panel chat-panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><label>注入策略<select value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">不注入个人策略</option>{strategies.filter((item) => item.status === "active").map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name} v{item.version}</option>)}</select></label><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} /></label><button className="primary" disabled={loading}>{loading ? "正在汇总研究…" : "获取 AI 解读与纪律状态"}</button></form>{error && <div className="notice">{error}</div>}{answer && <article className="answer">{decisions.length > 0 && <section className="decision-list"><p className="eyebrow">PERSONAL DISCIPLINE STATUS</p>{decisions.map((decision) => <article className={`decision-card ${decision.status}`} key={decision.discipline_id}><div><strong>{decision.label}</strong><p>{decision.discipline_name} · 现价 {decision.last_price}</p></div><small>{decision.rationale}</small></article>)}</section>}<p className="eyebrow">AI RESEARCH RESPONSE</p><p>{answer}</p><div className="status-list">{status.map((item) => <span key={item}>{item}</span>)}</div><small>纪律状态仅供你手动复核；研究结果不构成投资或交易指令，系统不会自动下单。</small></article>}</section>
+    <OverviewNews />
+  </>;
+}
+
+function OverviewNews() {
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function load() {
+    setLoading(true); setError(null);
+    try { setNews(await fetchNews()); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "资讯请求失败"); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+  return <section className="panel overview-news"><div className="panel-head"><div><p className="eyebrow">MARKET NEWS</p><h2>财经资讯</h2><p>东方财富优先，失败时自动尝试新浪；成功结果短时缓存，并用于自选标的的情绪研究。</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>{loading ? "采集中…" : "刷新资讯"}</button></div>{error && <div className="notice">{error}</div>}<div className="news-list">{news.slice(0, 6).map((item) => <article className="news-item" key={`${item.publisher}-${item.published_at}-${item.title}`}><span className={`tag ${item.sentiment}`}>{item.sentiment}</span><h3>{item.title}</h3><p>{item.content}</p><small>{item.publisher} · {new Date(item.published_at).toLocaleString()} · 情绪 {item.sentiment_score}</small></article>)}</div>{!loading && !error && news.length === 0 && <p className="muted">暂未获得可展示的公开财经资讯。</p>}</section>;
 }
 
 const defaultWatchlist: WatchlistInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", label: "", notes: "" };
@@ -203,7 +217,7 @@ function WatchlistWorkspace() {
 }
 
 function WatchlistDetail({ item, quote, report, study, analysis, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
-  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">FOCUSED WATCHLIST STUDY</p><h2>{item.label || item.symbol}</h2><p>仅拉取此自选标的的数据；所有交易决策仍须由你手动复核。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="最新分析" value={analysis ? new Date(analysis.observed_at).toLocaleTimeString() : "等待首次分析"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{report && <div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /></div>}{study && <TechnicalStudyView study={study} />}</section>;
+  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">RESEARCH ANALYSIS · DEEP TRACKING</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="来源" value={quote?.source ?? "—"} /><Metric label="最新分析" value={analysis ? new Date(analysis.observed_at).toLocaleTimeString() : "等待首次分析"} /><Metric label="状态" value={analysis?.status ?? "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{tag.label}</span>)}</div>{analysis.ai_summary && <section className="analysis-box"><h3>AI 研究摘要</h3><p>{analysis.ai_summary}</p></section>}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{report && <section className="deep-research-section"><div><p className="eyebrow">RESEARCH ANALYSIS</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} />{report.fund_research && <DataCard title="基金 / ETF 专项数据" data={report.fund_research} />}</div>{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}{study && <section className="deep-research-section"><div><p className="eyebrow">DEEP TRACKING</p><h3>深度跟踪</h3></div><TechnicalStudyView study={study} /></section>}</section>;
 }
 
 function PaperPortfolioWorkspace() {
@@ -228,20 +242,6 @@ function TechnicalStudyView({ study }: { study: TechnicalStudy }) {
   const indicators = study.indicators; const profile = study.volume_profile;
   const maxVolume = Math.max(...profile.levels.map((level) => Number(level.volume)), 1);
   return <div className="technical-results"><div className="panel-head"><div><p className="eyebrow">FOCUSED INSTRUMENT STUDY</p><h2>{study.symbol} · {study.timeframe}</h2><p>来源：{study.source}。仅拉取当前标的的历史 K 线，不执行全市场扫描。</p></div><span className="pill">{study.currency}</span></div><div className="metric-grid"><Metric label="趋势" value={study.assessment.trend} /><Metric label="动量" value={study.assessment.momentum} /><Metric label="量能压力" value={study.assessment.volume_pressure} /><Metric label="RSI(14)" value={String(indicators.rsi_14 ?? "—")} /></div><section className="chart-box"><h3>K 线价格区间</h3><div className="candle-strip">{study.bars.slice(-60).map((bar) => { const up = Number(bar.close) >= Number(bar.open); return <span title={`${bar.date} O:${bar.open} H:${bar.high} L:${bar.low} C:${bar.close}`} className={up ? "candle up" : "candle down"} key={bar.date} style={{ height: `${Math.max(8, Math.min(100, (Number(bar.high) - Number(bar.low)) * 10))}%` }} />; })}</div><div className="indicator-row">MA5 {indicators.sma_5 ?? "—"} · MA10 {indicators.sma_10 ?? "—"} · MA20 {indicators.sma_20 ?? "—"} · MA60 {indicators.sma_60 ?? "—"} · MACD {indicators.macd ?? "—"} · ATR {indicators.atr_14 ?? "—"}</div></section><section className="profile-box"><div><h3>Volume Profile 水平成交量分布</h3><p>POC {profile.point_of_control ?? "—"} · 70% 价值区 {profile.value_area_low ?? "—"} — {profile.value_area_high ?? "—"}</p></div><div className="profile-levels">{profile.levels.slice().reverse().map((level) => <div className="profile-level" key={String(level.price)}><span>{level.price}</span><i style={{ width: `${Math.max(2, Number(level.volume) / maxVolume * 100)}%` }} /><b>{level.percent}%</b></div>)}</div></section><section className="analysis-box"><h3>规则化解读</h3><ul>{study.assessment.observations.map((item) => <li key={item}>{item}</li>)}</ul><p>AI 提问时可直接填写相同标的，系统会结合行情、资讯、基本面与个人策略补充解读。</p>{study.assessment.limitations.map((item) => <small key={item}>{item}</small>)}</section></div>;
-}
-
-function NewsWorkspace() {
-  const [news, setNews] = useState<NewsItem[]>([]); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  async function load() { setLoading(true); setError(null); try { setNews(await fetchNews()); } catch (reason) { setError(reason instanceof Error ? reason.message : "资讯请求失败"); } finally { setLoading(false); } }
-  return <section className="panel"><div className="panel-head"><div><h2>近 24 小时财经快讯</h2><p>东方财富优先，失败时自动尝试新浪；成功结果短时缓存，减少公开源限频风险。资讯显示可解释词典情绪，仅供研究。</p></div><button className="secondary" onClick={load} disabled={loading}>{loading ? "采集中…" : "采集资讯"}</button></div>{error && <div className="notice">{error}</div>}<div className="news-list">{news.map((item) => <article className="news-item" key={`${item.publisher}-${item.published_at}-${item.title}`}><span className={`tag ${item.sentiment}`}>{item.sentiment}</span><h3>{item.title}</h3><p>{item.content}</p><small>{item.publisher} · {new Date(item.published_at).toLocaleString()} · 情绪 {item.sentiment_score}</small></article>)}</div></section>;
-}
-
-function ResearchWorkspace() {
-  const [symbol, setSymbol] = useState("600519.SH"); const [market, setMarket] = useState<Market>("a_share");
-  const [instrumentType, setInstrumentType] = useState<InstrumentType>("equity");
-  const [report, setReport] = useState<ResearchReport | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
-  async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setReport(await fetchResearch(symbol, market, instrumentType)); } catch (reason) { setError(reason instanceof Error ? reason.message : "研究请求失败"); } finally { setLoading(false); } }
-  return <section className="panel"><form onSubmit={submit}><TickerFields symbol={symbol} market={market} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><button className="primary" disabled={loading}>{loading ? "分析中…" : "运行研究分析"}</button></form>{error && <div className="notice">{error}</div>}{report && <div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} />{report.fund_research && <DataCard title="基金 / ETF 专项数据" data={report.fund_research} />}{report.notices.map((item) => <div className="notice" key={item}>{item}</div>)}</div>}</section>;
 }
 
 function StrategyWorkspace({ factors, strategies, error, reload }: { factors: Factor[]; strategies: Strategy[]; error: string | null; reload: () => void }) {
