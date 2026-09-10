@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
@@ -30,6 +31,7 @@ from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_repository,
     get_discipline,
 )
+from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.market_brief import post_market_brief
 from ai_trading_agent.interfaces.facade.portfolio import (
     get_watchlist_item,
@@ -68,6 +70,7 @@ from ai_trading_agent.interfaces.model.http import (
     DisciplineResponse,
     FactorResponse,
     FundResearchResponse,
+    InstrumentIdentityResponse,
     MarketScanResponse,
     NewsItemResponse,
     PaperPositionInput,
@@ -88,6 +91,15 @@ from ai_trading_agent.interfaces.model.http import (
     WatchlistResponse,
 )
 from ai_trading_agent.interfaces.task.market_scans import RecurringTaskScheduler
+
+
+async def _display_name(instrument) -> str | None:  # type: ignore[no-untyped-def]
+    """Identity lookup must never make an existing private list unavailable."""
+    try:
+        identity = await resolve_instrument_identity(instrument)
+        return None if identity is None else identity.display_name
+    except Exception:
+        return None
 
 
 def create_app(
@@ -146,6 +158,22 @@ def create_app(
             return QuoteResponse.from_domain(await latest_quote(instrument_from_query(query)))
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"行情不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/instruments/resolve",
+        response_model=InstrumentIdentityResponse,
+        tags=["instruments"],
+    )
+    async def resolve_instrument(query: QuoteQuery) -> InstrumentIdentityResponse:
+        try:
+            identity = await resolve_instrument_identity(instrument_from_query(query))
+            return InstrumentIdentityResponse.from_resolution(
+                query,
+                None if identity is None else identity.display_name,
+                None if identity is None else identity.source,
+            )
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"标的名称识别暂不可用：{error}") from error
 
     @app.get(
         "/api/v1/market/post-market-brief",
@@ -240,17 +268,24 @@ def create_app(
 
     @app.get("/api/v1/watchlist", response_model=list[WatchlistResponse], tags=["portfolio"])
     async def list_watchlist() -> list[WatchlistResponse]:
+        items = await ListWatchlistHandler(watchlist_repository(app)).handle()
+        names = await asyncio.gather(*(_display_name(item.instrument) for item in items))
         return [
-            WatchlistResponse.from_domain(item)
-            for item in await ListWatchlistHandler(watchlist_repository(app)).handle()
+            WatchlistResponse.from_domain(item, display_name=name)
+            for item, name in zip(items, names, strict=True)
         ]
 
     @app.post("/api/v1/watchlist", response_model=WatchlistResponse, tags=["portfolio"])
     async def save_watchlist(payload: WatchlistInput) -> WatchlistResponse:
-        saved = await SaveWatchlistHandler(watchlist_repository(app)).handle(
-            watchlist_from_input(payload, uuid4())
+        instrument = instrument_from_query(payload)
+        display_name = await _display_name(instrument)
+        resolved_payload = payload.model_copy(
+            update={"label": payload.label.strip() or display_name or ""}
         )
-        return WatchlistResponse.from_domain(saved)
+        saved = await SaveWatchlistHandler(watchlist_repository(app)).handle(
+            watchlist_from_input(resolved_payload, uuid4())
+        )
+        return WatchlistResponse.from_domain(saved, display_name=display_name)
 
     @app.delete("/api/v1/watchlist/{item_id}", status_code=204, tags=["portfolio"])
     async def delete_watchlist(item_id: UUID) -> None:
@@ -325,9 +360,11 @@ def create_app(
         "/api/v1/paper-positions", response_model=list[PaperPositionResponse], tags=["portfolio"]
     )
     async def list_paper_positions() -> list[PaperPositionResponse]:
+        positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
+        names = await asyncio.gather(*(_display_name(item.instrument) for item in positions))
         return [
-            PaperPositionResponse.from_domain(item)
-            for item in await ListPaperPositionsHandler(paper_position_repository(app)).handle()
+            PaperPositionResponse.from_domain(item, display_name=name)
+            for item, name in zip(positions, names, strict=True)
         ]
 
     @app.post("/api/v1/paper-positions", response_model=PaperPositionResponse, tags=["portfolio"])
@@ -335,7 +372,9 @@ def create_app(
         saved = await SavePaperPositionHandler(paper_position_repository(app)).handle(
             paper_position_from_input(payload, uuid4())
         )
-        return PaperPositionResponse.from_domain(saved)
+        return PaperPositionResponse.from_domain(
+            saved, display_name=await _display_name(saved.instrument)
+        )
 
     @app.get(
         "/api/v1/paper-positions/valuations",

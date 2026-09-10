@@ -88,6 +88,29 @@ class QuoteResponse(BaseModel):
         )
 
 
+class InstrumentIdentityResponse(BaseModel):
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    display_name: str | None
+    source: str | None
+
+    @classmethod
+    def from_resolution(
+        cls,
+        query: QuoteQuery,
+        display_name: str | None,
+        source: str | None,
+    ) -> InstrumentIdentityResponse:
+        return cls(
+            symbol=query.symbol,
+            market=query.market,
+            instrument_type=query.instrument_type,
+            display_name=display_name,
+            source=source,
+        )
+
+
 class MarketIndexResponse(BaseModel):
     symbol: str
     name: str
@@ -400,9 +423,12 @@ class WatchlistInput(QuoteQuery):
 
 class WatchlistResponse(WatchlistInput):
     item_id: UUID
+    display_name: str | None = None
 
     @classmethod
-    def from_domain(cls, item: WatchlistItem) -> WatchlistResponse:
+    def from_domain(
+        cls, item: WatchlistItem, *, display_name: str | None = None
+    ) -> WatchlistResponse:
         return cls(
             item_id=item.item_id,
             symbol=item.instrument.symbol,
@@ -410,6 +436,7 @@ class WatchlistResponse(WatchlistInput):
             instrument_type=item.instrument.instrument_type,
             label=item.label,
             notes=item.notes,
+            display_name=display_name or item.label or None,
         )
 
 
@@ -462,9 +489,12 @@ class PaperPositionInput(QuoteQuery):
 
 class PaperPositionResponse(PaperPositionInput):
     position_id: UUID
+    display_name: str | None = None
 
     @classmethod
-    def from_domain(cls, position: PaperPosition) -> PaperPositionResponse:
+    def from_domain(
+        cls, position: PaperPosition, *, display_name: str | None = None
+    ) -> PaperPositionResponse:
         return cls(
             position_id=position.position_id,
             symbol=position.instrument.symbol,
@@ -473,6 +503,7 @@ class PaperPositionResponse(PaperPositionInput):
             quantity=position.quantity,
             average_cost=position.average_cost,
             notes=position.notes,
+            display_name=display_name,
         )
 
 
