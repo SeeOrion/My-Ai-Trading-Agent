@@ -17,6 +17,8 @@ from ai_trading_agent.domain.aggregate.market_brief import PostMarketBrief
 from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist import (
+    PaperPortfolioOverview,
+    PaperPortfolioSummary,
     PaperPosition,
     PaperPositionValuation,
     WatchlistItem,
@@ -558,6 +560,11 @@ class PaperPositionValuationResponse(PaperPositionResponse):
     market_value: Decimal
     unrealized_pnl: Decimal
     unrealized_pnl_percent: Decimal
+    daily_pnl: Decimal | None
+    daily_pnl_percent: Decimal | None
+    month_to_date_pnl: Decimal | None
+    month_to_date_pnl_percent: Decimal | None
+    month_reference_date: str | None
 
     @classmethod
     def from_domain(cls, valuation: PaperPositionValuation) -> PaperPositionValuationResponse:
@@ -571,6 +578,69 @@ class PaperPositionValuationResponse(PaperPositionResponse):
             market_value=valuation.market_value,
             unrealized_pnl=valuation.unrealized_pnl,
             unrealized_pnl_percent=valuation.unrealized_pnl_percent,
+            daily_pnl=valuation.daily_pnl,
+            daily_pnl_percent=valuation.daily_pnl_percent,
+            month_to_date_pnl=valuation.month_to_date_pnl,
+            month_to_date_pnl_percent=valuation.month_to_date_pnl_percent,
+            month_reference_date=(
+                valuation.month_reference_date.isoformat()
+                if valuation.month_reference_date is not None
+                else None
+            ),
+        )
+
+
+class PaperPortfolioCurrencySummaryResponse(BaseModel):
+    currency: str
+    position_count: int
+    initial_principal: Decimal
+    total_market_value: Decimal
+    cumulative_pnl: Decimal
+    cumulative_return_percent: Decimal
+    daily_pnl: Decimal | None
+    daily_return_percent: Decimal | None
+    month_to_date_pnl: Decimal | None
+    month_to_date_return_percent: Decimal | None
+    daily_coverage_count: int
+    month_coverage_count: int
+
+
+class PaperPortfolioOverviewResponse(BaseModel):
+    observed_at: str
+    valued_position_count: int
+    total_position_count: int
+    currencies: list[PaperPortfolioCurrencySummaryResponse]
+    valuations: list[PaperPositionValuationResponse]
+    notices: list[str]
+
+    @classmethod
+    def from_domain(cls, overview: PaperPortfolioOverview) -> PaperPortfolioOverviewResponse:
+        summary: PaperPortfolioSummary = overview.summary
+        return cls(
+            observed_at=summary.observed_at.isoformat(),
+            valued_position_count=summary.valued_position_count,
+            total_position_count=summary.total_position_count,
+            currencies=[
+                PaperPortfolioCurrencySummaryResponse(
+                    currency=item.currency,
+                    position_count=item.position_count,
+                    initial_principal=item.initial_principal,
+                    total_market_value=item.total_market_value,
+                    cumulative_pnl=item.cumulative_pnl,
+                    cumulative_return_percent=item.cumulative_return_percent,
+                    daily_pnl=item.daily_pnl,
+                    daily_return_percent=item.daily_return_percent,
+                    month_to_date_pnl=item.month_to_date_pnl,
+                    month_to_date_return_percent=item.month_to_date_return_percent,
+                    daily_coverage_count=item.daily_coverage_count,
+                    month_coverage_count=item.month_coverage_count,
+                )
+                for item in summary.currencies
+            ],
+            valuations=[
+                PaperPositionValuationResponse.from_domain(item) for item in overview.valuations
+            ],
+            notices=list(overview.notices),
         )
 
 

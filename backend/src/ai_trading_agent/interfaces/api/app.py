@@ -21,7 +21,6 @@ from ai_trading_agent.application.portfolio import (
     SaveWatchlistHandler,
 )
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
-from ai_trading_agent.domain.aggregate.watchlist import value_paper_position
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
@@ -36,6 +35,7 @@ from ai_trading_agent.interfaces.facade.market_assistant import answer_market_qu
 from ai_trading_agent.interfaces.facade.market_brief import post_market_brief
 from ai_trading_agent.interfaces.facade.portfolio import (
     get_watchlist_item,
+    paper_portfolio_overview,
     paper_position_from_input,
     paper_position_repository,
     watchlist_from_input,
@@ -76,6 +76,7 @@ from ai_trading_agent.interfaces.model.http import (
     MarketQuestionResponse,
     MarketScanResponse,
     NewsItemResponse,
+    PaperPortfolioOverviewResponse,
     PaperPositionInput,
     PaperPositionResponse,
     PaperPositionValuationResponse,
@@ -401,14 +402,22 @@ def create_app(
     )
     async def value_paper_positions() -> list[PaperPositionValuationResponse]:
         positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
-        values = []
-        for position in positions:
-            values.append(
-                PaperPositionValuationResponse.from_domain(
-                    value_paper_position(position, await latest_quote(position.instrument))
-                )
+        overview = await paper_portfolio_overview(positions)
+        return [PaperPositionValuationResponse.from_domain(item) for item in overview.valuations]
+
+    @app.get(
+        "/api/v1/paper-positions/overview",
+        response_model=PaperPortfolioOverviewResponse,
+        tags=["portfolio"],
+    )
+    async def get_paper_portfolio_overview() -> PaperPortfolioOverviewResponse:
+        try:
+            positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
+            return PaperPortfolioOverviewResponse.from_domain(
+                await paper_portfolio_overview(positions)
             )
-        return values
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"模拟组合估值不可用：{error}") from error
 
     @app.delete("/api/v1/paper-positions/{position_id}", status_code=204, tags=["portfolio"])
     async def delete_paper_position(position_id: UUID) -> None:

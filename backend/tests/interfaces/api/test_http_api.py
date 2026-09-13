@@ -53,3 +53,13 @@ def test_watchlist_contract_exposes_single_instrument_financial_detail() -> None
     assert "/api/v1/watchlist/{item_id}/deep-dive" in schema["paths"]
     response_schema = schema["components"]["schemas"]["WatchlistFinancialDetailResponse"]
     assert "valuation" in response_schema["properties"]
+
+
+def test_paper_portfolio_contract_exposes_currency_safe_performance_summary() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    assert "/api/v1/paper-positions/overview" in schema["paths"]
+    summary_schema = schema["components"]["schemas"]["PaperPortfolioCurrencySummaryResponse"]
+    assert "month_to_date_pnl" in summary_schema["properties"]
+    valuation_schema = schema["components"]["schemas"]["PaperPositionValuationResponse"]
+    assert "daily_pnl" in valuation_schema["properties"]

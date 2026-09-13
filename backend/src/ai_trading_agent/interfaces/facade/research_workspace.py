@@ -29,7 +29,10 @@ from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
 )
-from ai_trading_agent.application.technical import AnalyzeTechnicalStudyHandler
+from ai_trading_agent.application.technical import (
+    AnalyzeTechnicalStudyHandler,
+    HistoricalBarsProvider,
+)
 from ai_trading_agent.application.watchlist_detail import GetWatchlistFinancialDetailHandler
 from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
 from ai_trading_agent.domain.aggregate.fund import FundResearchReport
@@ -39,6 +42,7 @@ from ai_trading_agent.domain.aggregate.research import (
     analyze_financial_sentiment,
 )
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.technical import PriceBar
 from ai_trading_agent.domain.aggregate.watchlist_detail import WatchlistFinancialDetail
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
@@ -477,19 +481,8 @@ async def watchlist_financial_detail(instrument: Instrument):  # type: ignore[no
 
 async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
     """Compose source selection at the interface edge, not in the domain."""
-    load_runtime_environment()
     instrument = instrument_from_query(query)
-    if _is_exchange_etf(instrument):
-        provider = HithinkFundHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
-    elif instrument.market is Market.FUND:
-        raise ValueError(
-            "场外基金暂无真实 OHLCV，无法生成 K 线或 Volume Profile；"
-            "可使用基金研究页查看净值和回撤。"
-        )
-    elif instrument.market is Market.A_SHARE:
-        provider = HithinkAshareHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
-    else:
-        provider = FutuHistoricalBarsProvider(FutuSettings.from_environment())
+    provider = historical_bars_provider(instrument)
     study = await AnalyzeTechnicalStudyHandler(provider).handle(
         instrument, query.timeframe, limit=query.limit
     )
@@ -541,6 +534,28 @@ async def technical_study(query: TechnicalRequest) -> TechnicalResponse:
             "limitations": list(study.assessment.limitations),
         },
     )
+
+
+async def historical_daily_bars(instrument: Instrument, *, limit: int = 90) -> tuple[PriceBar, ...]:
+    """Retrieve daily bars for a focused portfolio metric without full technical analysis."""
+    if not 2 <= limit <= 1_200:
+        raise ValueError("historical bar limit must be between 2 and 1200")
+    return await historical_bars_provider(instrument).get_daily_bars(instrument, limit)
+
+
+def historical_bars_provider(instrument: Instrument) -> HistoricalBarsProvider:
+    """Centralize market-specific OHLCV selection for every focused use case."""
+    load_runtime_environment()
+    if _is_exchange_etf(instrument):
+        return HithinkFundHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
+    if instrument.market is Market.FUND:
+        raise ValueError(
+            "场外基金暂无真实 OHLCV，无法生成 K 线或基于收盘价的月度盈亏；"
+            "可使用基金研究页查看净值和回撤。"
+        )
+    if instrument.market is Market.A_SHARE:
+        return HithinkAshareHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
+    return FutuHistoricalBarsProvider(FutuSettings.from_environment())
 
 
 async def fund_research_report(instrument: Instrument) -> FundResearchReport:
