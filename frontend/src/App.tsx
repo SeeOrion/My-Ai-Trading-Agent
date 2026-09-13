@@ -7,7 +7,8 @@ import {
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperValuations, PaperPositionValuation,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
-  fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief, resolveInstrument
+  fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief, resolveInstrument,
+  askMarketQuestion, MarketQuestionAnswer
 } from "./api";
 
 type Page = "dashboard" | "watchlist" | "positions" | "funds" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
@@ -102,9 +103,37 @@ function Dashboard() {
   }
   useEffect(() => { void load(); }, []);
   return <><section className="hero"><div><p className="eyebrow">POST-MARKET BRIEF</p><h2>今日市场快报</h2><p>从同花顺指数快照汇总主要指数和行业板块涨跌。盘中访问时为最新快照，收盘后可作为当日复盘入口。</p></div><button className="primary" onClick={() => void load(true)} disabled={loading}>{loading ? "更新中…" : "刷新快报"}</button></section>
-    <section className="panel market-brief-panel"><div className="panel-head"><div><p className="eyebrow">INDEX OVERVIEW</p><h2>指数总览</h2><p>上证、深成、创业板和沪深 300。</p></div>{brief && <small className="brief-time">快照于 {new Date(brief.observed_at).toLocaleString()}</small>}</div>{error && <div className="notice">{error}</div>}{brief && <><div className="index-grid">{brief.indices.map((item) => <article className="index-card" key={item.symbol}><small>{item.name}</small><strong>{item.last_price}</strong><span className={Number(item.change_percent) > 0 ? "change up" : Number(item.change_percent) < 0 ? "change down" : "change"}>{formatPercent(item.change_percent)} {item.price_change !== null ? `(${formatSigned(item.price_change)})` : ""}</span></article>)}</div><section className="rotation-section"><div><p className="eyebrow">SECTOR ROTATION</p><h2>板块轮动</h2><p>按行业指数当日涨跌幅排序，不等同于资金流向。</p></div><div className="rotation-grid"><RotationList title="领涨板块" items={brief.leading_sectors} tone="up" /><RotationList title="领跌板块" items={brief.lagging_sectors} tone="down" /></div></section><p className="brief-note">{brief.coverage}<br />{brief.disclaimer}</p></>}</section>
-    <OverviewNews />
+    <section className="dashboard-layout"><div className="dashboard-main"><section className="panel market-brief-panel"><div className="panel-head"><div><p className="eyebrow">INDEX OVERVIEW</p><h2>指数总览</h2><p>上证、深成、创业板和沪深 300。</p></div>{brief && <small className="brief-time">快照于 {new Date(brief.observed_at).toLocaleString()}</small>}</div>{error && <div className="notice">{error}</div>}{brief && <><div className="index-grid">{brief.indices.map((item) => <article className="index-card" key={item.symbol}><small>{item.name}</small><strong>{item.last_price}</strong><span className={Number(item.change_percent) > 0 ? "change up" : Number(item.change_percent) < 0 ? "change down" : "change"}>{formatPercent(item.change_percent)} {item.price_change !== null ? `(${formatSigned(item.price_change)})` : ""}</span></article>)}</div><section className="rotation-section"><div><p className="eyebrow">SECTOR ROTATION</p><h2>板块轮动</h2><p>按行业指数当日涨跌幅排序，不等同于资金流向。</p></div><div className="rotation-grid"><RotationList title="领涨板块" items={brief.leading_sectors} tone="up" /><RotationList title="领跌板块" items={brief.lagging_sectors} tone="down" /></div></section><p className="brief-note">{brief.coverage}<br />{brief.disclaimer}</p></>}</section><OverviewNews /></div><MarketAssistant /></section>
   </>;
+}
+
+const marketQuestionPrompts = ["今天市场行情如何？", "白糖有哪些 ETF 可以了解？", "我想关注科技，有哪些股票可先研究？"];
+
+function MarketAssistant() {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<MarketQuestionAnswer | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function ask(nextQuestion = question) {
+    const normalized = nextQuestion.trim();
+    if (normalized.length < 2) return;
+    setQuestion(normalized); setLoading(true); setError(null);
+    try { setAnswer(await askMarketQuestion(normalized)); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "市场问答请求失败"); }
+    finally { setLoading(false); }
+  }
+
+  return <aside className="panel market-assistant"><div><p className="eyebrow">AI MARKET Q&A</p><h2>问问市场</h2><p className="muted">用当前指数、板块、财经资讯和可核实的股票 / ETF 目录，帮你快速梳理问题。</p></div><div className="assistant-prompts">{marketQuestionPrompts.map((prompt) => <button className="prompt-chip" type="button" key={prompt} onClick={() => void ask(prompt)} disabled={loading}>{prompt}</button>)}</div><form className="assistant-form" onSubmit={(event) => { event.preventDefault(); void ask(); }}><label>你的问题<textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="例如：今天市场行情如何？白糖有哪些 ETF？" maxLength={500} /></label><button className="primary" disabled={loading || question.trim().length < 2}>{loading ? "正在整理市场数据…" : "开始提问"}</button></form>{error && <div className="notice">{error}</div>}{answer && <section className="assistant-result" aria-live="polite"><div className="assistant-result-head"><strong>市场研究答复</strong><small>{new Date(answer.generated_at).toLocaleTimeString()}</small></div><AssistantAnswerText answer={answer.answer} />{answer.candidates.length > 0 && <div className="assistant-candidates"><h3>相关候选</h3><div>{answer.candidates.map((item) => <span className="candidate-chip" key={`${item.symbol}-${item.asset_type}`}><strong>{item.name}</strong><small>{item.symbol} · {marketAssetType(item.asset_type)}</small></span>)}</div></div>}{answer.sources.length > 0 && <div className="assistant-sources"><span>已用数据</span>{answer.sources.map((source) => <small key={source}>{source}</small>)}</div>}{answer.notices.map((notice) => <p className="assistant-notice" key={notice}>{notice}</p>)}</section>}</aside>;
+}
+
+function AssistantAnswerText({ answer }: { answer: string }) {
+  const lines = answer.split(/\r?\n/).map(cleanResearchLine).filter(Boolean);
+  return <div className="assistant-answer">{lines.map((line, index) => { const matched = line.match(/^([^：:]{2,10})[：:]\s*(.+)$/); return matched ? <div className="assistant-answer-row" key={`${index}-${line}`}><strong>{matched[1]}</strong><p>{matched[2]}</p></div> : <p key={`${index}-${line}`}>{line}</p>; })}</div>;
+}
+
+function marketAssetType(value: string) {
+  return ({ "a-share": "A 股", "fund-etf": "ETF", "fund-lof": "LOF", "fund-otc": "公募基金" } as Record<string, string>)[value] ?? value;
 }
 
 function RotationList({ title, items, tone }: { title: string; items: PostMarketBrief["leading_sectors"]; tone: "up" | "down" }) {

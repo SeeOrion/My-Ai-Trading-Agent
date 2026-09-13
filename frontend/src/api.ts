@@ -59,6 +59,21 @@ export interface PostMarketBrief {
   coverage: string;
   disclaimer: string;
 }
+export interface MarketQuestionCandidate {
+  symbol: string;
+  name: string;
+  asset_type: string;
+  exchange: string | null;
+  currency: string | null;
+  source: string;
+}
+export interface MarketQuestionAnswer {
+  answer: string;
+  generated_at: string;
+  sources: string[];
+  notices: string[];
+  candidates: MarketQuestionCandidate[];
+}
 
 export type CandidateRanking = "composite" | "momentum" | "balanced_entry";
 
@@ -208,6 +223,10 @@ export const resolveInstrument = (symbol: string, market: Market, instrumentType
   request<InstrumentIdentity>("/api/v1/instruments/resolve", { method: "POST", body: JSON.stringify({ symbol, market, instrument_type: instrumentType }) });
 export const fetchPostMarketBrief = (refresh = false) =>
   request<PostMarketBrief>(`/api/v1/market/post-market-brief?refresh=${refresh}`);
+export const askMarketQuestion = (question: string) =>
+  request<MarketQuestionAnswer>("/api/v1/assistant/market-question", {
+    method: "POST", body: JSON.stringify({ question })
+  });
 export const fetchCandidates = (market: Market, ranking: CandidateRanking, refresh = false) =>
   request<CandidateScreen>(`/api/v1/market/candidates?market=${market}&ranking=${ranking}&refresh=${refresh}`);
 export const runMarketScan = (market: Market) =>
