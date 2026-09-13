@@ -200,6 +200,9 @@ export interface PaperPosition extends PaperPositionInput { position_id: string;
 export interface PaperPositionValuation extends PaperPosition { last_price: string; currency: string; observed_at: string; source: string; market_value: string; unrealized_pnl: string; unrealized_pnl_percent: string; daily_pnl: string | null; daily_pnl_percent: string | null; month_to_date_pnl: string | null; month_to_date_pnl_percent: string | null; month_reference_date: string | null; }
 export interface PaperPortfolioCurrencySummary { currency: string; position_count: number; initial_principal: string; total_market_value: string; cumulative_pnl: string; cumulative_return_percent: string; daily_pnl: string | null; daily_return_percent: string | null; month_to_date_pnl: string | null; month_to_date_return_percent: string | null; daily_coverage_count: number; month_coverage_count: number; }
 export interface PaperPortfolioOverview { observed_at: string; valued_position_count: number; total_position_count: number; currencies: PaperPortfolioCurrencySummary[]; valuations: PaperPositionValuation[]; notices: string[]; }
+export interface AiSimulationRunInput { market: Exclude<Market, "fund">; initial_capital: string; max_positions: number; strategy_id: string | null; }
+export interface AiSimulationPosition { position_id: string; symbol: string; market: Market; instrument_type: InstrumentType; quantity: string; average_cost: string; cost_amount: string; candidate_score: string; factor_context: string[]; rationale: string[]; opened_at: string; last_price: string | null; market_value: string | null; unrealized_pnl: string | null; unrealized_pnl_percent: string | null; daily_pnl: string | null; month_to_date_pnl: string | null; source: string | null; }
+export interface AiSimulationOverview { portfolio_id: string; market: Market; currency: string; initial_capital: string; cash_balance: string; invested_cost: string; market_value: string; total_equity: string; cumulative_pnl: string; daily_pnl: string | null; month_to_date_pnl: string | null; max_positions: number; strategy_id: string | null; observed_at: string; positions: AiSimulationPosition[]; notices: string[]; }
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -267,3 +270,5 @@ export const createPaperPosition = (payload: PaperPositionInput) => request<Pape
 export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });
 export const fetchPaperValuations = () => request<PaperPositionValuation[]>("/api/v1/paper-positions/valuations");
 export const fetchPaperPortfolioOverview = () => request<PaperPortfolioOverview>("/api/v1/paper-positions/overview");
+export const fetchAiSimulationOverview = (market: Exclude<Market, "fund">) => request<AiSimulationOverview>(`/api/v1/ai-simulation/overview?market=${market}`);
+export const runAiSimulation = (payload: AiSimulationRunInput) => request<AiSimulationOverview>("/api/v1/ai-simulation/run", { method: "POST", body: JSON.stringify(payload) });
