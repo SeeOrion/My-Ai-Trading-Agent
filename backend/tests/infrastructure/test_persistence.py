@@ -14,6 +14,8 @@ def test_private_schema_contains_auditable_product_records() -> None:
     assert f"{SCHEMA}.watchlist_analysis_snapshots" in tables
     assert f"{SCHEMA}.market_scan_runs" in tables
     assert f"{SCHEMA}.market_snapshots" in tables
+    assert f"{SCHEMA}.ai_simulation_portfolios" in tables
+    assert f"{SCHEMA}.ai_simulation_positions" in tables
 
 
 def test_database_engine_requires_async_postgresql_url() -> None:

@@ -111,6 +111,69 @@ class PaperPositionRecord(Base, TimestampedRecord):
     notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
+class AiSimulationPortfolioRecord(Base, TimestampedRecord):
+    __tablename__ = "ai_simulation_portfolios"
+    __table_args__ = {"schema": SCHEMA}
+
+    portfolio_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)
+    initial_capital: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    cash_balance: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    max_positions: Mapped[int] = mapped_column(Integer, nullable=False)
+    strategy_id: Mapped[str | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.strategy_profiles.strategy_id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+
+
+class AiSimulationPositionRecord(Base, TimestampedRecord):
+    __tablename__ = "ai_simulation_positions"
+    __table_args__ = (
+        Index("ix_ai_simulation_positions_portfolio_status", "portfolio_id", "status"),
+        {"schema": SCHEMA},
+    )
+
+    position_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        ForeignKey(f"{SCHEMA}.ai_simulation_portfolios.portfolio_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    instrument_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    average_cost: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    candidate_score: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
+    factor_context: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    rationale: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+
+
+class AiSimulationTradeRecord(Base):
+    __tablename__ = "ai_simulation_trades"
+    __table_args__ = (
+        Index("ix_ai_simulation_trades_portfolio_executed", "portfolio_id", "executed_at"),
+        {"schema": SCHEMA},
+    )
+
+    trade_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        ForeignKey(f"{SCHEMA}.ai_simulation_portfolios.portfolio_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    position_id: Mapped[str | None] = mapped_column(
+        ForeignKey(f"{SCHEMA}.ai_simulation_positions.position_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(28, 8), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rationale: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+
+
 class DocumentRecord(Base, TimestampedRecord):
     __tablename__ = "documents"
     __table_args__ = {"schema": SCHEMA}
