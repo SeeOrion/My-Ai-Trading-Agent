@@ -675,6 +675,17 @@ class AiSimulationPositionResponse(BaseModel):
     source: str | None
 
 
+class AiSimulationDecisionResponse(BaseModel):
+    symbol: str
+    score: Decimal
+    decision: str
+    supportive_factor_count: int
+    adverse_factor_count: int
+    available_factor_ids: list[str]
+    unavailable_factor_ids: list[str]
+    blockers: list[str]
+
+
 class AiSimulationOverviewResponse(BaseModel):
     portfolio_id: UUID
     market: Market
@@ -692,6 +703,7 @@ class AiSimulationOverviewResponse(BaseModel):
     observed_at: str
     positions: list[AiSimulationPositionResponse]
     notices: list[str]
+    decision_reports: list[AiSimulationDecisionResponse]
 
     @classmethod
     def from_domain(cls, overview: AiSimulationOverview) -> AiSimulationOverviewResponse:
@@ -735,6 +747,19 @@ class AiSimulationOverviewResponse(BaseModel):
                 for item in overview.positions
             ],
             notices=list(overview.notices),
+            decision_reports=[
+                AiSimulationDecisionResponse(
+                    symbol=item.symbol,
+                    score=item.score,
+                    decision=item.decision,
+                    supportive_factor_count=item.supportive_factor_count,
+                    adverse_factor_count=item.adverse_factor_count,
+                    available_factor_ids=list(item.available_factor_ids),
+                    unavailable_factor_ids=list(item.unavailable_factor_ids),
+                    blockers=list(item.blockers),
+                )
+                for item in overview.decision_reports
+            ],
         )
 
 

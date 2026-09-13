@@ -11,6 +11,7 @@ from fastapi import FastAPI
 
 from ai_trading_agent.application.strategies import ListStrategiesHandler
 from ai_trading_agent.domain.aggregate.ai_simulation import (
+    AiSimulationDecisionReport,
     AiSimulationOverview,
     AiSimulationPortfolio,
     AiSimulationPosition,
@@ -23,7 +24,8 @@ from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.domain.service.ai_simulation import (
     AiSimulationCandidate,
-    choose_simulated_entry,
+    AiSimulationEntryDecision,
+    evaluate_simulated_entry,
 )
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
@@ -79,8 +81,22 @@ async def run_ai_simulation(
     else:
         notices.append(f"本轮采用策略「{strategy.name}」，仅参考其已配置的因子与仓位上限。")
 
+    decision_reports: list[AiSimulationDecisionReport] = []
+
     for candidate in screen.candidates:
         if candidate.observation.instrument.symbol in existing_symbols:
+            decision_reports.append(
+                AiSimulationDecisionReport(
+                    symbol=candidate.observation.instrument.symbol,
+                    score=candidate.score,
+                    decision="already_held",
+                    supportive_factor_count=0,
+                    adverse_factor_count=0,
+                    available_factor_ids=(),
+                    unavailable_factor_ids=(),
+                    blockers=("该标的已经在 AI 模拟组合中，本轮不重复建仓。",),
+                )
+            )
             continue
         analysis = await builtin_factor_analysis(
             candidate.observation.instrument,
@@ -88,7 +104,7 @@ async def run_ai_simulation(
             news_sentiment=None,
         )
         simulated_candidate = _candidate_from_analysis(candidate, analysis, strategy)
-        allocation = choose_simulated_entry(
+        decision = evaluate_simulated_entry(
             simulated_candidate,
             available_cash=portfolio.cash_balance,
             initial_capital=portfolio.initial_capital,
@@ -97,6 +113,8 @@ async def run_ai_simulation(
             max_position_percent=(strategy.max_position_pct if strategy else Decimal("25")),
             lot_size=Decimal("100") if request.market is Market.A_SHARE else Decimal("1"),
         )
+        decision_reports.append(_decision_report(simulated_candidate, decision))
+        allocation = decision.allocation
         if allocation is None:
             continue
         position = AiSimulationPosition(
@@ -150,6 +168,7 @@ async def run_ai_simulation(
         daily_pnl=overview.daily_pnl,
         month_to_date_pnl=overview.month_to_date_pnl,
         notices=tuple(dict.fromkeys((*overview.notices, *notices))),
+        decision_reports=tuple(decision_reports),
     )
 
 
@@ -235,6 +254,11 @@ def _candidate_from_analysis(
         for item in relevant
         if item["direction"] != "unavailable"
     )
+    unavailable = tuple(
+        str(item["identifier"])
+        for item in relevant
+        if item["direction"] == "unavailable"
+    )
     supportive = sum(item["direction"] == "supportive" for item in relevant)
     adverse = sum(item["direction"] == "adverse" for item in relevant)
     rationale = tuple(
@@ -249,12 +273,29 @@ def _candidate_from_analysis(
         supportive_factor_count=supportive,
         adverse_factor_count=adverse,
         available_factor_ids=available,
+        unavailable_factor_ids=unavailable,
         rationale=rationale,
     )
 
 
 def _currency_for_market(market: Market) -> str:
     return {Market.A_SHARE: "CNY", Market.HONG_KONG: "HKD", Market.UNITED_STATES: "USD"}[market]
+
+
+def _decision_report(
+    candidate: AiSimulationCandidate,
+    decision: AiSimulationEntryDecision,
+) -> AiSimulationDecisionReport:
+    return AiSimulationDecisionReport(
+        symbol=candidate.symbol,
+        score=candidate.score,
+        decision="buy" if decision.allocation is not None else "skip",
+        supportive_factor_count=candidate.supportive_factor_count,
+        adverse_factor_count=candidate.adverse_factor_count,
+        available_factor_ids=candidate.available_factor_ids,
+        unavailable_factor_ids=candidate.unavailable_factor_ids,
+        blockers=decision.blockers,
+    )
 
 
 def _position_valuation(

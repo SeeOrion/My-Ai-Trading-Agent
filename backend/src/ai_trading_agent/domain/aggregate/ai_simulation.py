@@ -102,6 +102,28 @@ class AiSimulationPositionValuation:
 
 
 @dataclass(frozen=True, slots=True)
+class AiSimulationDecisionReport:
+    """A candidate-level explanation for a simulated buy or a skipped entry."""
+
+    symbol: str
+    score: Decimal
+    decision: str
+    supportive_factor_count: int
+    adverse_factor_count: int
+    available_factor_ids: tuple[str, ...]
+    unavailable_factor_ids: tuple[str, ...]
+    blockers: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.decision not in {"buy", "skip", "already_held"}:
+            raise ValueError("invalid simulation decision")
+        if self.supportive_factor_count < 0 or self.adverse_factor_count < 0:
+            raise ValueError("factor counts must not be negative")
+        if self.decision == "skip" and not self.blockers:
+            raise ValueError("skipped simulation candidates require blockers")
+
+
+@dataclass(frozen=True, slots=True)
 class AiSimulationOverview:
     portfolio: AiSimulationPortfolio
     observed_at: datetime
@@ -113,6 +135,7 @@ class AiSimulationOverview:
     daily_pnl: Decimal | None
     month_to_date_pnl: Decimal | None
     notices: tuple[str, ...] = ()
+    decision_reports: tuple[AiSimulationDecisionReport, ...] = ()
 
     def __post_init__(self) -> None:
         if self.observed_at.tzinfo is None:
