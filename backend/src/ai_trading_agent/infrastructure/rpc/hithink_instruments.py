@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from ai_trading_agent.domain.aggregate.instrument_identity import InstrumentIdentity
+from ai_trading_agent.domain.aggregate.instrument_identity import (
+    CatalogInstrument,
+    InstrumentIdentity,
+)
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.config.providers import HithinkFinanceSettings
@@ -46,6 +49,30 @@ class HithinkInstrumentIdentityProvider:
             return None
         return InstrumentIdentity(instrument, str(row["name"]), self.name)
 
+    async def search(
+        self, query: str, *, asset_types: tuple[str, ...], limit: int
+    ) -> list[CatalogInstrument]:
+        """Search the documented catalogue without guessing codes or exchanges."""
+        try:
+            data = await self._client.get(
+                _TICKER_SEARCH_PATH,
+                {"q": query, "asset_type": ",".join(asset_types), "limit": limit},
+            )
+        except HithinkFinanceServiceError as error:
+            raise HithinkInstrumentIdentityProviderError(str(error)) from error
+        matches: list[CatalogInstrument] = []
+        seen: set[str] = set()
+        allowed = {asset_type.lower() for asset_type in asset_types}
+        for row in response_items(data):
+            candidate = _catalog_item(row)
+            if candidate is None or candidate.asset_type not in allowed:
+                continue
+            if candidate.symbol in seen:
+                continue
+            seen.add(candidate.symbol)
+            matches.append(candidate)
+        return matches
+
 
 def _asset_type(instrument: Instrument) -> str | None:
     if instrument.market is Market.A_SHARE and instrument.instrument_type is InstrumentType.EQUITY:
@@ -73,3 +100,24 @@ def _best_match(rows: list[dict[str, object]], instrument: Instrument) -> dict[s
         if str(row.get("ticker", "")).upper() == ticker and str(row.get("name", "")).strip()
     ]
     return ticker_matches[0] if len(ticker_matches) == 1 else None
+
+
+def _catalog_item(row: dict[str, object]) -> CatalogInstrument | None:
+    symbol = str(row.get("thscode", "")).strip()
+    name = str(row.get("name", "")).strip()
+    asset_type = str(row.get("asset_type", "")).strip()
+    if not symbol or not name or not asset_type:
+        return None
+    return CatalogInstrument(
+        symbol=symbol,
+        name=name,
+        asset_type=asset_type,
+        exchange=_optional_string(row.get("exchange")),
+        currency=_optional_string(row.get("currency")),
+        source=HithinkInstrumentIdentityProvider.name,
+    )
+
+
+def _optional_string(value: object) -> str | None:
+    normalized = str(value or "").strip()
+    return normalized or None

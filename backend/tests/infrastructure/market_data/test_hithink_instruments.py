@@ -57,3 +57,46 @@ async def test_hong_kong_identity_does_not_call_a_share_or_fund_catalogue() -> N
     identity = await provider.resolve(Instrument("00700", Market.HONG_KONG))
 
     assert identity is None
+
+
+@pytest.mark.asyncio
+async def test_catalogue_search_returns_source_verified_etf_matches() -> None:
+    requested: list[str] = []
+
+    def response_fetcher(url: str, api_key: str, timeout_seconds: float) -> bytes:
+        requested.append(url)
+        return json.dumps(
+            {
+                "code": 0,
+                "data": {
+                    "item": [
+                        {
+                            "thscode": "510300.SH",
+                            "name": "沪深300ETF",
+                            "asset_type": "fund-etf",
+                            "exchange": "SH",
+                            "currency": "CNY",
+                        },
+                        {
+                            "thscode": "161725.SZ",
+                            "name": "白糖主题LOF",
+                            "asset_type": "fund-lof",
+                            "exchange": "SZ",
+                            "currency": "CNY",
+                        },
+                    ]
+                },
+            }
+        ).encode()
+
+    provider = HithinkInstrumentIdentityProvider(
+        HithinkFinanceSettings("test-key"), response_fetcher=response_fetcher
+    )
+
+    matches = await provider.search(
+        "白糖", asset_types=("fund-etf", "fund-lof"), limit=6
+    )
+
+    assert [item.symbol for item in matches] == ["510300.SH", "161725.SZ"]
+    assert matches[0].source == "hithink_finance_meta"
+    assert "asset_type=fund-etf%2Cfund-lof" in requested[0]
