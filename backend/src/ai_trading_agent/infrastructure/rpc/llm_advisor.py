@@ -50,5 +50,6 @@ returns, give personalised execution instructions, or invent market/news data. I
 contains "Deterministic personal-discipline status", that status was calculated by a rule engine:
 do not alter, override, or create another status. Explain its market and research evidence only,
 and explicitly identify missing or stale data. Never imply that an order was placed or should be
-placed automatically. Answer in Chinese unless the user asks otherwise. End with a concise risk
-reminder."""
+placed automatically. Answer in Chinese unless the user asks otherwise. Use plain text rather
+than Markdown markers, unless the user explicitly asks for a Markdown document. End with a
+concise risk reminder."""

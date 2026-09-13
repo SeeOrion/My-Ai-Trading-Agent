@@ -12,6 +12,7 @@ from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
 from ai_trading_agent.domain.aggregate.market import Quote
+from ai_trading_agent.domain.aggregate.market_assistant import MarketAssistantAnswer
 from ai_trading_agent.domain.aggregate.market_brief import PostMarketBrief
 from ai_trading_agent.domain.aggregate.market_scan import MarketScanRun
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
@@ -176,6 +177,47 @@ class PostMarketBriefResponse(BaseModel):
                 "板块轮动仅按指数涨跌幅呈现，并非主力资金流、持仓或交易信号；"
                 "盘中访问时显示的是最新快照，并非已收盘结论。"
             ),
+        )
+
+
+class MarketQuestionRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=500)
+
+
+class MarketQuestionCandidateResponse(BaseModel):
+    symbol: str
+    name: str
+    asset_type: str
+    exchange: str | None
+    currency: str | None
+    source: str
+
+
+class MarketQuestionResponse(BaseModel):
+    answer: str
+    generated_at: str
+    sources: list[str]
+    notices: list[str]
+    candidates: list[MarketQuestionCandidateResponse]
+
+    @classmethod
+    def from_domain(cls, answer: MarketAssistantAnswer) -> MarketQuestionResponse:
+        return cls(
+            answer=answer.answer,
+            generated_at=answer.generated_at.isoformat(),
+            sources=list(answer.sources),
+            notices=list(answer.notices),
+            candidates=[
+                MarketQuestionCandidateResponse(
+                    symbol=item.symbol,
+                    name=item.name,
+                    asset_type=item.asset_type,
+                    exchange=item.exchange,
+                    currency=item.currency,
+                    source=item.source,
+                )
+                for item in answer.candidates
+            ],
         )
 
 

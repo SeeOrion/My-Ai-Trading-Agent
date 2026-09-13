@@ -32,6 +32,7 @@ from ai_trading_agent.interfaces.facade.disciplines import (
     get_discipline,
 )
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
+from ai_trading_agent.interfaces.facade.market_assistant import answer_market_question
 from ai_trading_agent.interfaces.facade.market_brief import post_market_brief
 from ai_trading_agent.interfaces.facade.portfolio import (
     get_watchlist_item,
@@ -71,6 +72,8 @@ from ai_trading_agent.interfaces.model.http import (
     FactorResponse,
     FundResearchResponse,
     InstrumentIdentityResponse,
+    MarketQuestionRequest,
+    MarketQuestionResponse,
     MarketScanResponse,
     NewsItemResponse,
     PaperPositionInput,
@@ -185,6 +188,21 @@ def create_app(
             return PostMarketBriefResponse.from_domain(await post_market_brief(refresh=refresh))
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"盘后快报暂不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/assistant/market-question",
+        response_model=MarketQuestionResponse,
+        tags=["assistant"],
+    )
+    async def ask_market_question(payload: MarketQuestionRequest) -> MarketQuestionResponse:
+        try:
+            return MarketQuestionResponse.from_domain(
+                await answer_market_question(payload.question)
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"市场问答暂不可用：{error}") from error
 
     @app.get(
         "/api/v1/market/candidates",

@@ -29,13 +29,15 @@ def test_personal_discipline_routes_are_part_of_the_http_contract() -> None:
     assert "/api/v1/disciplines" in response.json()["paths"]
 
 
-def test_dashboard_contract_exposes_market_brief_and_omits_legacy_chat() -> None:
+def test_dashboard_contract_exposes_market_brief_and_market_question() -> None:
     schema = TestClient(create_app()).get("/openapi.json").json()
 
-    assert "/api/v1/assistant/chat" not in schema["paths"]
+    assert "/api/v1/assistant/market-question" in schema["paths"]
     assert "/api/v1/market/post-market-brief" in schema["paths"]
     response_schema = schema["components"]["schemas"]["PostMarketBriefResponse"]
     assert "leading_sectors" in response_schema["properties"]
+    answer_schema = schema["components"]["schemas"]["MarketQuestionResponse"]
+    assert "candidates" in answer_schema["properties"]
 
 
 def test_watchlist_analysis_contract_exposes_saved_labels() -> None:
