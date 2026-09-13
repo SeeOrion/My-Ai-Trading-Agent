@@ -1,9 +1,12 @@
 from decimal import Decimal
+from uuid import uuid4
 
+from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationPortfolio
 from ai_trading_agent.domain.service.ai_simulation import (
     AiSimulationCandidate,
     choose_simulated_entry,
     evaluate_simulated_entry,
+    reconfigure_simulation_portfolio,
 )
 
 
@@ -82,3 +85,51 @@ def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
     assert any("缺失" in item for item in decision.blockers)
     assert any("支持 0 项，逆风 2 项" in item for item in decision.blockers)
     assert any("达到上限" in item for item in decision.blockers)
+
+
+def test_reconfigure_simulation_portfolio_preserves_positions_and_applies_capital_delta() -> None:
+    portfolio = AiSimulationPortfolio(
+        portfolio_id=uuid4(),
+        market="a_share",
+        currency="CNY",
+        initial_capital=Decimal("100000"),
+        cash_balance=Decimal("75000"),
+        max_positions=3,
+    )
+
+    updated = reconfigure_simulation_portfolio(
+        portfolio,
+        initial_capital=Decimal("120000"),
+        max_positions=4,
+        strategy_id=None,
+        open_position_count=1,
+    )
+
+    assert updated.portfolio_id == portfolio.portfolio_id
+    assert updated.initial_capital == Decimal("120000")
+    assert updated.cash_balance == Decimal("95000")
+    assert updated.max_positions == 4
+
+
+def test_reconfigure_simulation_portfolio_rejects_conflicting_open_positions() -> None:
+    portfolio = AiSimulationPortfolio(
+        portfolio_id=uuid4(),
+        market="a_share",
+        currency="CNY",
+        initial_capital=Decimal("100000"),
+        cash_balance=Decimal("25000"),
+        max_positions=3,
+    )
+
+    try:
+        reconfigure_simulation_portfolio(
+            portfolio,
+            initial_capital=Decimal("20000"),
+            max_positions=1,
+            strategy_id=None,
+            open_position_count=2,
+        )
+    except ValueError as error:
+        assert "最多持仓" in str(error)
+    else:
+        raise AssertionError("expected conflicting account settings to be rejected")

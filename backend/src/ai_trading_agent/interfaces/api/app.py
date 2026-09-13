@@ -29,6 +29,7 @@ from ai_trading_agent.interfaces.facade.ai_simulation import (
     AiSimulationRunRequest,
     ai_simulation_overview,
     run_ai_simulation,
+    update_ai_simulation_settings,
 )
 from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
@@ -473,6 +474,35 @@ def create_app(
             raise HTTPException(status_code=422, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"AI 模拟选股暂不可用：{error}") from error
+
+    @app.put(
+        "/api/v1/ai-simulation/settings",
+        response_model=AiSimulationOverviewResponse,
+        tags=["ai-simulation"],
+    )
+    async def save_ai_simulation_settings(
+        payload: AiSimulationRunInput,
+    ) -> AiSimulationOverviewResponse:
+        try:
+            if payload.market is Market.FUND:
+                raise ValueError("AI 模拟选股当前仅支持 A 股、港股和美股股票样本")
+            return AiSimulationOverviewResponse.from_domain(
+                await update_ai_simulation_settings(
+                    app,
+                    AiSimulationRunRequest(
+                        market=payload.market,
+                        initial_capital=payload.initial_capital,
+                        max_positions=payload.max_positions,
+                        strategy_id=payload.strategy_id,
+                    ),
+                )
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"AI 模拟账户更新失败：{error}") from error
 
     @app.delete("/api/v1/paper-positions/{position_id}", status_code=204, tags=["portfolio"])
     async def delete_paper_position(position_id: UUID) -> None:

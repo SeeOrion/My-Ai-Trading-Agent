@@ -71,6 +71,7 @@ def test_ai_simulation_contract_exposes_auditable_capital_and_positions() -> Non
     schema = TestClient(create_app()).get("/openapi.json").json()
 
     assert "/api/v1/ai-simulation/run" in schema["paths"]
+    assert "put" in schema["paths"]["/api/v1/ai-simulation/settings"]
     overview_schema = schema["components"]["schemas"]["AiSimulationOverviewResponse"]
     required_overview_fields = {
         "initial_capital",

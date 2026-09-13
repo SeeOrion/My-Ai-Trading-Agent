@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
+from uuid import UUID
+
+from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationPortfolio
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +35,46 @@ class AiSimulationAllocation:
 class AiSimulationEntryDecision:
     allocation: AiSimulationAllocation | None
     blockers: tuple[str, ...]
+
+
+def reconfigure_simulation_portfolio(
+    portfolio: AiSimulationPortfolio,
+    *,
+    initial_capital: Decimal,
+    max_positions: int,
+    strategy_id: UUID | None,
+    open_position_count: int,
+) -> AiSimulationPortfolio:
+    """Update account settings without discarding audited paper-trading state.
+
+    Changing the starting capital is treated as a deposit or withdrawal.  The
+    cash delta is applied while existing positions and their trade history stay
+    intact, so historical simulated results remain explainable.
+    """
+    if open_position_count < 0:
+        raise ValueError("open_position_count must not be negative")
+    if max_positions < open_position_count:
+        raise ValueError(
+            f"当前已有 {open_position_count} 个 AI 模拟持仓，最多持仓不能低于该数量。"
+        )
+
+    updated_cash = portfolio.cash_balance + (initial_capital - portfolio.initial_capital)
+    if updated_cash < 0:
+        minimum_capital = portfolio.initial_capital - portfolio.cash_balance
+        raise ValueError(
+            "为保留已有模拟持仓与交易记录，初始本金不能低于 "
+            f"{minimum_capital:.2f}。"
+        )
+    return AiSimulationPortfolio(
+        portfolio_id=portfolio.portfolio_id,
+        market=portfolio.market,
+        currency=portfolio.currency,
+        initial_capital=initial_capital,
+        cash_balance=updated_cash,
+        max_positions=max_positions,
+        strategy_id=strategy_id,
+        status=portfolio.status,
+    )
 
 
 def choose_simulated_entry(

@@ -27,6 +27,7 @@ from ai_trading_agent.domain.service.ai_simulation import (
     AiSimulationCandidate,
     AiSimulationEntryDecision,
     evaluate_simulated_entry,
+    reconfigure_simulation_portfolio,
 )
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
@@ -57,6 +58,7 @@ async def run_ai_simulation(
     """Run one bounded, deterministic AI paper-trading review for one market."""
     repository = ai_simulation_repository(app)
     strategy = await _select_strategy(app, request.market, request.strategy_id)
+    _ensure_requested_strategy(request.strategy_id, strategy)
     portfolio = await repository.get_active(request.market)
     if portfolio is None:
         portfolio = AiSimulationPortfolio(
@@ -69,8 +71,12 @@ async def run_ai_simulation(
             strategy_id=None if strategy is None else strategy.strategy_id,
         )
         portfolio = await repository.save_portfolio(portfolio)
-
-    positions = await repository.list_open_positions(portfolio.portfolio_id)
+        positions: list[AiSimulationPosition] = []
+    else:
+        positions = await repository.list_open_positions(portfolio.portfolio_id)
+        portfolio = await _save_reconfigured_portfolio(
+            repository, portfolio, positions, request, strategy
+        )
     screen, _ = await today_candidates(
         request.market, CandidateRanking.BALANCED_ENTRY, refresh=True
     )
@@ -175,6 +181,37 @@ async def run_ai_simulation(
     )
 
 
+async def update_ai_simulation_settings(
+    app: FastAPI, request: AiSimulationRunRequest
+) -> AiSimulationOverview:
+    """Persist account settings without running a candidate screen or trade cycle."""
+    repository = ai_simulation_repository(app)
+    portfolio = await repository.get_active(request.market)
+    if portfolio is None:
+        raise LookupError("尚未创建该市场的 AI 模拟组合")
+    strategy = await _select_strategy(app, request.market, request.strategy_id)
+    _ensure_requested_strategy(request.strategy_id, strategy)
+    positions = await repository.list_open_positions(portfolio.portfolio_id)
+    await _save_reconfigured_portfolio(repository, portfolio, positions, request, strategy)
+    overview = await ai_simulation_overview(app, request.market)
+    return AiSimulationOverview(
+        portfolio=overview.portfolio,
+        observed_at=overview.observed_at,
+        positions=overview.positions,
+        invested_cost=overview.invested_cost,
+        market_value=overview.market_value,
+        total_equity=overview.total_equity,
+        cumulative_pnl=overview.cumulative_pnl,
+        daily_pnl=overview.daily_pnl,
+        month_to_date_pnl=overview.month_to_date_pnl,
+        notices=tuple(
+            dict.fromkeys(
+                (*overview.notices, "AI 模拟账户设置已同步；既有持仓和交易记录已保留。")
+            )
+        ),
+    )
+
+
 async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:
     repository = ai_simulation_repository(app)
     portfolio = await repository.get_active(market)
@@ -231,23 +268,44 @@ async def _select_strategy(
     app: FastAPI, market: Market, strategy_id: UUID | None
 ) -> StrategyProfile | None:
     strategies = await ListStrategiesHandler(strategy_repository(app)).handle()
-    if strategy_id is not None:
-        return next(
-            (
-                item
-                for item in strategies
-                if (
-                    item.strategy_id == strategy_id
-                    and item.status == "active"
-                    and market in item.markets
-                )
-            ),
-            None,
-        )
+    if strategy_id is None:
+        return None
     return next(
-        (item for item in strategies if item.status == "active" and market in item.markets),
+        (
+            item
+            for item in strategies
+            if (
+                item.strategy_id == strategy_id
+                and item.status == "active"
+                and market in item.markets
+            )
+        ),
         None,
     )
+
+
+def _ensure_requested_strategy(
+    strategy_id: UUID | None, strategy: StrategyProfile | None
+) -> None:
+    if strategy_id is not None and strategy is None:
+        raise ValueError("所选策略不存在、未启用，或不适用于当前市场。")
+
+
+async def _save_reconfigured_portfolio(
+    repository: SqlAlchemyAiSimulationRepository,
+    portfolio: AiSimulationPortfolio,
+    positions: list[AiSimulationPosition],
+    request: AiSimulationRunRequest,
+    strategy: StrategyProfile | None,
+) -> AiSimulationPortfolio:
+    updated = reconfigure_simulation_portfolio(
+        portfolio,
+        initial_capital=request.initial_capital,
+        max_positions=request.max_positions,
+        strategy_id=None if strategy is None else strategy.strategy_id,
+        open_position_count=len(positions),
+    )
+    return portfolio if updated == portfolio else await repository.save_portfolio(updated)
 
 
 def _candidate_from_analysis(
