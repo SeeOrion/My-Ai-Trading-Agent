@@ -65,3 +65,17 @@ def test_paper_portfolio_contract_exposes_currency_safe_performance_summary() ->
     assert "daily_pnl" in valuation_schema["properties"]
     position_schema = schema["components"]["schemas"]["PaperPositionResponse"]
     assert "cost_amount" in position_schema["properties"]
+
+
+def test_ai_simulation_contract_exposes_auditable_capital_and_positions() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+
+    assert "/api/v1/ai-simulation/run" in schema["paths"]
+    overview_schema = schema["components"]["schemas"]["AiSimulationOverviewResponse"]
+    assert {"initial_capital", "cash_balance", "total_equity", "positions"} <= set(
+        overview_schema["properties"]
+    )
+    position_schema = schema["components"]["schemas"]["AiSimulationPositionResponse"]
+    assert {"cost_amount", "candidate_score", "factor_context", "rationale"} <= set(
+        position_schema["properties"]
+    )

@@ -25,6 +25,11 @@ from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
+from ai_trading_agent.interfaces.facade.ai_simulation import (
+    AiSimulationRunRequest,
+    ai_simulation_overview,
+    run_ai_simulation,
+)
 from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
     discipline_repository,
@@ -65,6 +70,8 @@ from ai_trading_agent.interfaces.facade.watchlist_analysis import (
 )
 from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
+    AiSimulationOverviewResponse,
+    AiSimulationRunInput,
     CandidateResponse,
     CandidateScreenResponse,
     DisciplineInput,
@@ -418,6 +425,54 @@ def create_app(
             )
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"模拟组合估值不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/ai-simulation/overview",
+        response_model=AiSimulationOverviewResponse,
+        tags=["ai-simulation"],
+    )
+    async def get_ai_simulation_overview(market: Market) -> AiSimulationOverviewResponse:
+        try:
+            if market is Market.FUND:
+                raise ValueError("AI 模拟选股当前仅支持 A 股、港股和美股股票样本")
+            return AiSimulationOverviewResponse.from_domain(
+                await ai_simulation_overview(app, market)
+            )
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(
+                status_code=503, detail=f"AI 模拟组合估值不可用：{error}"
+            ) from error
+
+    @app.post(
+        "/api/v1/ai-simulation/run",
+        response_model=AiSimulationOverviewResponse,
+        tags=["ai-simulation"],
+    )
+    async def run_ai_simulation_cycle(
+        payload: AiSimulationRunInput,
+    ) -> AiSimulationOverviewResponse:
+        try:
+            if payload.market is Market.FUND:
+                raise ValueError("AI 模拟选股当前仅支持 A 股、港股和美股股票样本")
+            return AiSimulationOverviewResponse.from_domain(
+                await run_ai_simulation(
+                    app,
+                    AiSimulationRunRequest(
+                        market=payload.market,
+                        initial_capital=payload.initial_capital,
+                        max_positions=payload.max_positions,
+                        strategy_id=payload.strategy_id,
+                    ),
+                )
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"AI 模拟选股暂不可用：{error}") from error
 
     @app.delete("/api/v1/paper-positions/{position_id}", status_code=204, tags=["portfolio"])
     async def delete_paper_position(position_id: UUID) -> None:

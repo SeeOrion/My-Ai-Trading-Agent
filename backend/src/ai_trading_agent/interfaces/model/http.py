@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from ai_trading_agent.domain.ability.factors import FactorMetadata
+from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationOverview
 from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
@@ -641,6 +642,97 @@ class PaperPortfolioOverviewResponse(BaseModel):
             ],
             valuations=[
                 PaperPositionValuationResponse.from_domain(item) for item in overview.valuations
+            ],
+            notices=list(overview.notices),
+        )
+
+
+class AiSimulationRunInput(BaseModel):
+    market: Market
+    initial_capital: Decimal = Field(gt=0)
+    max_positions: int = Field(default=3, ge=1, le=10)
+    strategy_id: UUID | None = None
+
+
+class AiSimulationPositionResponse(BaseModel):
+    position_id: UUID
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    quantity: Decimal
+    average_cost: Decimal
+    cost_amount: Decimal
+    candidate_score: Decimal
+    factor_context: list[str]
+    rationale: list[str]
+    opened_at: str
+    last_price: Decimal | None
+    market_value: Decimal | None
+    unrealized_pnl: Decimal | None
+    unrealized_pnl_percent: Decimal | None
+    daily_pnl: Decimal | None
+    month_to_date_pnl: Decimal | None
+    source: str | None
+
+
+class AiSimulationOverviewResponse(BaseModel):
+    portfolio_id: UUID
+    market: Market
+    currency: str
+    initial_capital: Decimal
+    cash_balance: Decimal
+    invested_cost: Decimal
+    market_value: Decimal
+    total_equity: Decimal
+    cumulative_pnl: Decimal
+    daily_pnl: Decimal | None
+    month_to_date_pnl: Decimal | None
+    max_positions: int
+    strategy_id: UUID | None
+    observed_at: str
+    positions: list[AiSimulationPositionResponse]
+    notices: list[str]
+
+    @classmethod
+    def from_domain(cls, overview: AiSimulationOverview) -> AiSimulationOverviewResponse:
+        portfolio = overview.portfolio
+        return cls(
+            portfolio_id=portfolio.portfolio_id,
+            market=Market(portfolio.market),
+            currency=portfolio.currency,
+            initial_capital=portfolio.initial_capital,
+            cash_balance=portfolio.cash_balance,
+            invested_cost=overview.invested_cost,
+            market_value=overview.market_value,
+            total_equity=overview.total_equity,
+            cumulative_pnl=overview.cumulative_pnl,
+            daily_pnl=overview.daily_pnl,
+            month_to_date_pnl=overview.month_to_date_pnl,
+            max_positions=portfolio.max_positions,
+            strategy_id=portfolio.strategy_id,
+            observed_at=overview.observed_at.isoformat(),
+            positions=[
+                AiSimulationPositionResponse(
+                    position_id=item.position.position_id,
+                    symbol=item.position.instrument.symbol,
+                    market=item.position.instrument.market,
+                    instrument_type=item.position.instrument.instrument_type,
+                    quantity=item.position.quantity,
+                    average_cost=item.position.average_cost,
+                    cost_amount=item.position.cost_amount,
+                    candidate_score=item.position.candidate_score,
+                    factor_context=list(item.position.factor_context),
+                    rationale=list(item.position.rationale),
+                    opened_at=item.position.opened_at.isoformat(),
+                    last_price=item.last_price,
+                    market_value=item.market_value,
+                    unrealized_pnl=item.unrealized_pnl,
+                    unrealized_pnl_percent=item.unrealized_pnl_percent,
+                    daily_pnl=item.daily_pnl,
+                    month_to_date_pnl=item.month_to_date_pnl,
+                    source=item.source,
+                )
+                for item in overview.positions
             ],
             notices=list(overview.notices),
         )
