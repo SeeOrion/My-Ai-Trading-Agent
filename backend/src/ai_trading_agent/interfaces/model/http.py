@@ -657,6 +657,7 @@ class AiSimulationRunInput(BaseModel):
 class AiSimulationPositionResponse(BaseModel):
     position_id: UUID
     symbol: str
+    display_name: str | None
     market: Market
     instrument_type: InstrumentType
     quantity: Decimal
@@ -677,6 +678,7 @@ class AiSimulationPositionResponse(BaseModel):
 
 class AiSimulationDecisionResponse(BaseModel):
     symbol: str
+    display_name: str | None
     score: Decimal
     decision: str
     supportive_factor_count: int
@@ -727,6 +729,7 @@ class AiSimulationOverviewResponse(BaseModel):
                 AiSimulationPositionResponse(
                     position_id=item.position.position_id,
                     symbol=item.position.instrument.symbol,
+                    display_name=item.display_name,
                     market=item.position.instrument.market,
                     instrument_type=item.position.instrument.instrument_type,
                     quantity=item.position.quantity,
@@ -750,6 +753,7 @@ class AiSimulationOverviewResponse(BaseModel):
             decision_reports=[
                 AiSimulationDecisionResponse(
                     symbol=item.symbol,
+                    display_name=item.display_name,
                     score=item.score,
                     decision=item.decision,
                     supportive_factor_count=item.supportive_factor_count,

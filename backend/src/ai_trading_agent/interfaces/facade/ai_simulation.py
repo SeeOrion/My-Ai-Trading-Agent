@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -28,6 +29,7 @@ from ai_trading_agent.domain.service.ai_simulation import (
     evaluate_simulated_entry,
 )
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
+from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview
 from ai_trading_agent.interfaces.facade.research_workspace import (
@@ -88,6 +90,7 @@ async def run_ai_simulation(
             decision_reports.append(
                 AiSimulationDecisionReport(
                     symbol=candidate.observation.instrument.symbol,
+                    display_name=candidate.observation.name,
                     score=candidate.score,
                     decision="already_held",
                     supportive_factor_count=0,
@@ -190,8 +193,14 @@ async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOv
     ]
     paper_overview = await paper_portfolio_overview(paper_positions)
     by_id = {item.position.position_id: item for item in paper_overview.valuations}
+    display_names = await _display_names(positions)
     valued_positions = tuple(
-        _position_valuation(position, by_id.get(position.position_id)) for position in positions
+        _position_valuation(
+            position,
+            by_id.get(position.position_id),
+            display_names.get(position.position_id),
+        )
+        for position in positions
     )
     summary = next(
         (
@@ -268,6 +277,7 @@ def _candidate_from_analysis(
     ) or tuple(candidate.reasons)
     return AiSimulationCandidate(
         symbol=candidate.observation.instrument.symbol,
+        display_name=candidate.observation.name,
         score=candidate.score,
         last_price=candidate.observation.last_price,
         supportive_factor_count=supportive,
@@ -288,6 +298,7 @@ def _decision_report(
 ) -> AiSimulationDecisionReport:
     return AiSimulationDecisionReport(
         symbol=candidate.symbol,
+        display_name=candidate.display_name,
         score=candidate.score,
         decision="buy" if decision.allocation is not None else "skip",
         supportive_factor_count=candidate.supportive_factor_count,
@@ -299,11 +310,12 @@ def _decision_report(
 
 
 def _position_valuation(
-    position: AiSimulationPosition, valuation
+    position: AiSimulationPosition, valuation, display_name: str | None
 ) -> AiSimulationPositionValuation:  # type: ignore[no-untyped-def]
     if valuation is None:
         return AiSimulationPositionValuation(
             position=position,
+            display_name=display_name,
             last_price=None,
             market_value=None,
             unrealized_pnl=None,
@@ -314,6 +326,7 @@ def _position_valuation(
         )
     return AiSimulationPositionValuation(
         position=position,
+        display_name=display_name,
         last_price=valuation.quote.last_price,
         market_value=valuation.market_value,
         unrealized_pnl=valuation.unrealized_pnl,
@@ -322,3 +335,17 @@ def _position_valuation(
         month_to_date_pnl=valuation.month_to_date_pnl,
         source=valuation.quote.source,
     )
+
+
+async def _display_names(
+    positions: list[AiSimulationPosition],
+) -> dict[UUID, str | None]:
+    async def resolve(position: AiSimulationPosition) -> tuple[UUID, str | None]:
+        try:
+            identity = await resolve_instrument_identity(position.instrument)
+            return position.position_id, None if identity is None else identity.display_name
+        except Exception:
+            return position.position_id, None
+
+    resolved = await asyncio.gather(*(resolve(position) for position in positions))
+    return dict(resolved)

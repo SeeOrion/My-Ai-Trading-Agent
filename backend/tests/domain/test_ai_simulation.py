@@ -12,6 +12,7 @@ def _candidate(
 ) -> AiSimulationCandidate:
     return AiSimulationCandidate(
         symbol="600519.SH",
+        display_name="贵州茅台",
         score=Decimal(score),
         last_price=Decimal(price),
         supportive_factor_count=supportive,
@@ -56,6 +57,7 @@ def test_ai_simulation_keeps_cash_when_factor_evidence_or_score_is_insufficient(
 def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
     candidate = AiSimulationCandidate(
         symbol="600519.SH",
+        display_name="贵州茅台",
         score=Decimal("65"),
         last_price=Decimal("1500"),
         supportive_factor_count=0,

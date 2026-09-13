@@ -9,6 +9,7 @@ from decimal import ROUND_DOWN, Decimal
 @dataclass(frozen=True, slots=True)
 class AiSimulationCandidate:
     symbol: str
+    display_name: str
     score: Decimal
     last_price: Decimal
     supportive_factor_count: int

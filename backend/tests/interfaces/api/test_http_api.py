@@ -81,10 +81,10 @@ def test_ai_simulation_contract_exposes_auditable_capital_and_positions() -> Non
     }
     assert required_overview_fields <= set(overview_schema["properties"])
     position_schema = schema["components"]["schemas"]["AiSimulationPositionResponse"]
-    assert {"cost_amount", "candidate_score", "factor_context", "rationale"} <= set(
+    assert {"display_name", "cost_amount", "candidate_score", "factor_context", "rationale"} <= set(
         position_schema["properties"]
     )
     decision_schema = schema["components"]["schemas"]["AiSimulationDecisionResponse"]
-    assert {"blockers", "available_factor_ids", "unavailable_factor_ids"} <= set(
+    assert {"display_name", "blockers", "available_factor_ids", "unavailable_factor_ids"} <= set(
         decision_schema["properties"]
     )

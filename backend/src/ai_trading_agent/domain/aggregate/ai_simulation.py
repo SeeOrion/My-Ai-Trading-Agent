@@ -92,6 +92,7 @@ class AiSimulationTrade:
 @dataclass(frozen=True, slots=True)
 class AiSimulationPositionValuation:
     position: AiSimulationPosition
+    display_name: str | None
     last_price: Decimal | None
     market_value: Decimal | None
     unrealized_pnl: Decimal | None
@@ -106,6 +107,7 @@ class AiSimulationDecisionReport:
     """A candidate-level explanation for a simulated buy or a skipped entry."""
 
     symbol: str
+    display_name: str | None
     score: Decimal
     decision: str
     supportive_factor_count: int
