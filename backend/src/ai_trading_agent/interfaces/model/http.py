@@ -535,6 +535,7 @@ class PaperPositionInput(QuoteQuery):
 class PaperPositionResponse(PaperPositionInput):
     position_id: UUID
     display_name: str | None = None
+    cost_amount: Decimal
 
     @classmethod
     def from_domain(
@@ -547,6 +548,7 @@ class PaperPositionResponse(PaperPositionInput):
             instrument_type=position.instrument.instrument_type,
             quantity=position.quantity,
             average_cost=position.average_cost,
+            cost_amount=position.cost_basis,
             notes=position.notes,
             display_name=display_name,
         )

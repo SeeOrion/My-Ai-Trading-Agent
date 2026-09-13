@@ -9,6 +9,7 @@ from ai_trading_agent.domain.aggregate.watchlist import (
     value_paper_position,
 )
 from ai_trading_agent.domain.enums.market import Market
+from ai_trading_agent.domain.service.position_metrics import calculate_position_metrics
 
 
 def _position(symbol: str, quantity: str, cost: str) -> PaperPosition:
@@ -77,3 +78,33 @@ def test_paper_portfolio_does_not_present_partial_monthly_total_as_complete() ->
 
     assert summary.currencies[0].daily_pnl == Decimal("10")
     assert summary.currencies[0].month_to_date_pnl is None
+
+
+def test_selected_stock_holding_exposes_cost_amount_and_unrealized_profit() -> None:
+    """A chosen A-share holding can reuse the pure cost and P&L calculation."""
+    selected_stock = _position("600519.SH", "100", "1500")
+
+    metrics = calculate_position_metrics(
+        selected_stock.quantity,
+        selected_stock.average_cost,
+        market_price=Decimal("1562.50"),
+    )
+    valuation = value_paper_position(
+        selected_stock,
+        _quote(selected_stock, "1562.50", "1550"),
+    )
+
+    assert selected_stock.cost_basis == Decimal("150000")
+    assert metrics.cost_amount == Decimal("150000")
+    assert metrics.market_value == Decimal("156250.00")
+    assert metrics.unrealized_pnl == Decimal("6250.00")
+    assert metrics.unrealized_pnl_percent == Decimal("4.166666666666666666666666667")
+    assert valuation.unrealized_pnl == metrics.unrealized_pnl
+
+
+def test_position_metrics_still_returns_cost_when_market_price_is_not_available() -> None:
+    metrics = calculate_position_metrics(Decimal("200"), Decimal("12.50"))
+
+    assert metrics.cost_amount == Decimal("2500.00")
+    assert metrics.market_value is None
+    assert metrics.unrealized_pnl is None

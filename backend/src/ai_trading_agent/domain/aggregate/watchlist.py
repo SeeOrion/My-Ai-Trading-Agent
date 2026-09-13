@@ -8,6 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
+from ai_trading_agent.domain.service.position_metrics import calculate_position_metrics
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +39,7 @@ class PaperPosition:
 
     @property
     def cost_basis(self) -> Decimal:
-        return self.quantity * self.average_cost
+        return calculate_position_metrics(self.quantity, self.average_cost).cost_amount
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +120,14 @@ def value_paper_position(
 ) -> PaperPositionValuation:
     if quote.instrument != position.instrument:
         raise ValueError("quote instrument must match the paper position")
-    market_value = position.quantity * quote.last_price
-    unrealized_pnl = market_value - position.cost_basis
+    metrics = calculate_position_metrics(
+        position.quantity, position.average_cost, market_price=quote.last_price
+    )
+    assert metrics.market_value is not None
+    assert metrics.unrealized_pnl is not None
+    assert metrics.unrealized_pnl_percent is not None
+    market_value = metrics.market_value
+    unrealized_pnl = metrics.unrealized_pnl
     daily_pnl = None
     daily_pnl_percent = None
     if quote.previous_close is not None and quote.previous_close > 0:
@@ -138,7 +145,7 @@ def value_paper_position(
         quote=quote,
         market_value=market_value,
         unrealized_pnl=unrealized_pnl,
-        unrealized_pnl_percent=(unrealized_pnl / position.cost_basis * Decimal("100")),
+        unrealized_pnl_percent=metrics.unrealized_pnl_percent,
         daily_pnl=daily_pnl,
         daily_pnl_percent=daily_pnl_percent,
         month_to_date_pnl=month_to_date_pnl,

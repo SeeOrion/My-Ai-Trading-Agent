@@ -63,3 +63,5 @@ def test_paper_portfolio_contract_exposes_currency_safe_performance_summary() ->
     assert "month_to_date_pnl" in summary_schema["properties"]
     valuation_schema = schema["components"]["schemas"]["PaperPositionValuationResponse"]
     assert "daily_pnl" in valuation_schema["properties"]
+    position_schema = schema["components"]["schemas"]["PaperPositionResponse"]
+    assert "cost_amount" in position_schema["properties"]
