@@ -46,6 +46,16 @@ class DisciplineDecisionStatus(StrEnum):
     EXIT = "exit"
 
 
+class ManualActionStatus(StrEnum):
+    """A review status, never a brokerage order or an execution instruction."""
+
+    OBSERVE = "observe"
+    CONSIDER_ENTRY = "consider_entry"
+    CONSIDER_ADD = "consider_add"
+    TAKE_PROFIT_REVIEW = "take_profit_review"
+    EXIT_REVIEW = "exit_review"
+
+
 class WatchlistAnalysisStatus(StrEnum):
     COMPLETED = "completed"
     PARTIAL = "partial"

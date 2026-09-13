@@ -7,17 +7,21 @@ from uuid import uuid4
 
 from fastapi import FastAPI
 
+from ai_trading_agent.application.strategies import ListStrategiesHandler
 from ai_trading_agent.application.watchlist_analysis import (
     GetLatestWatchlistAnalysisHandler,
     ListLatestWatchlistAnalysesHandler,
     SaveWatchlistAnalysisHandler,
 )
+from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
+from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist import WatchlistItem
 from ai_trading_agent.domain.aggregate.watchlist_analysis import (
     AnalysisTag,
     WatchlistAnalysisSnapshot,
 )
-from ai_trading_agent.domain.enums.research import WatchlistAnalysisStatus
+from ai_trading_agent.domain.enums.research import ManualActionStatus, WatchlistAnalysisStatus
+from ai_trading_agent.domain.service.manual_actions import assess_manual_action
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
@@ -29,6 +33,7 @@ from ai_trading_agent.interfaces.facade.portfolio import (
 from ai_trading_agent.interfaces.facade.research_workspace import (
     latest_quote,
     research,
+    strategy_repository,
     technical_study,
 )
 from ai_trading_agent.interfaces.model.http import (
@@ -102,6 +107,29 @@ async def refresh_watchlist_analysis(
     tags.extend(_factor_tags(report.factor_analysis))
     context.append(f"Research: {report.model_dump_json(exclude_none=True)}")
 
+    strategies: list[StrategyProfile] = []
+    try:
+        profiles = await ListStrategiesHandler(strategy_repository(app)).handle()
+        strategies = [
+            profile
+            for profile in profiles
+            if profile.status == "active" and item.instrument.market in profile.markets
+        ]
+        if strategies:
+            context.append(
+                "Active personal strategies (research constraints, not executable orders): "
+                + "; ".join(
+                    f"{profile.name}: factors={list(profile.factor_ids)}, "
+                    f"max_position_pct={profile.max_position_pct}, thesis={profile.thesis}, "
+                    f"risk_notes={profile.risk_notes}"
+                    for profile in strategies
+                )
+            )
+        else:
+            context.append("No active personal strategy matches this market.")
+    except Exception as error:
+        notices.append(f"个人策略暂不可用：{error}")
+
     try:
         study = await technical_study(
             TechnicalRequest(
@@ -126,6 +154,7 @@ async def refresh_watchlist_analysis(
     except Exception as error:
         notices.append(f"技术研究暂不可用：{error}")
 
+    decisions: list[DisciplineDecision] = []
     if quote is not None:
         try:
             decisions = await evaluate_active_disciplines(app, item.instrument, quote)
@@ -145,6 +174,17 @@ async def refresh_watchlist_analysis(
                 )
         except Exception as error:
             notices.append(f"个人纪律暂不可用：{error}")
+
+    action = assess_manual_action(
+        _factor_directions(report.factor_analysis), strategies, decisions
+    )
+    tags.append(_manual_action_tag(action.status, action.price_level, action.max_position_pct))
+    context.append(
+        "Deterministic manual action assessment (manual review only): "
+        f"status={action.status.value}; price_level={action.price_level}; "
+        f"max_position_pct={action.max_position_pct}; strategies={list(action.strategy_names)}; "
+        f"rationale={list(action.rationale)}"
+    )
 
     ai_summary = await _summarize_with_ai(context, notices)
     if ai_summary is not None:
@@ -239,6 +279,50 @@ def _factor_tags(factor_analysis: dict[str, object] | None) -> list[AnalysisTag]
     ]
 
 
+def _factor_directions(factor_analysis: dict[str, object] | None) -> dict[str, str]:
+    if factor_analysis is None:
+        return {}
+    observations = factor_analysis.get("observations")
+    if not isinstance(observations, list):
+        return {}
+    directions: dict[str, str] = {}
+    for observation in observations:
+        if not isinstance(observation, dict):
+            continue
+        identifier = observation.get("identifier")
+        direction = observation.get("direction")
+        if isinstance(identifier, str) and isinstance(direction, str):
+            directions[identifier] = direction
+    return directions
+
+
+def _manual_action_tag(
+    status: ManualActionStatus,
+    price_level: object,
+    max_position_pct: object,
+) -> AnalysisTag:
+    labels = {
+        ManualActionStatus.OBSERVE: "观察",
+        ManualActionStatus.CONSIDER_ENTRY: "可考虑建仓",
+        ManualActionStatus.CONSIDER_ADD: "加仓条件满足",
+        ManualActionStatus.TAKE_PROFIT_REVIEW: "止盈复核",
+        ManualActionStatus.EXIT_REVIEW: "清仓复核",
+    }
+    tones = {
+        ManualActionStatus.OBSERVE: "neutral",
+        ManualActionStatus.CONSIDER_ENTRY: "positive",
+        ManualActionStatus.CONSIDER_ADD: "info",
+        ManualActionStatus.TAKE_PROFIT_REVIEW: "positive",
+        ManualActionStatus.EXIT_REVIEW: "negative",
+    }
+    parts = [f"动作：{labels[status]}"]
+    if price_level is not None:
+        parts.append(f"价位 {price_level}")
+    if max_position_pct is not None:
+        parts.append(f"上限 {max_position_pct}%")
+    return AnalysisTag("action", " · ".join(parts), tones[status])
+
+
 def _technical_tone(value: str) -> str:
     if any(item in value for item in ("偏多", "上升", "强")):
         return "positive"
@@ -279,8 +363,10 @@ async def _summarize_with_ai(context: list[str], notices: list[str]) -> str | No
         answer = await adviser.answer(
             question=(
                 "请将该自选标的的已确认数据浓缩为 3 条以内、总计不超过 300 字的"
-                "中文研究摘要。优先解释内置因子中有效值、方向和缺口；只解释事实、"
-                "缺口和规则状态，不给出个性化交易指令。"
+                "中文研究摘要。第 1 行必须以“行动：”开头，只能复述已提供的"
+                "手动复核状态和价位；第 2 行以“依据：”开头，说明策略所选因子、"
+                "纪律和数据缺口。不得使用 Markdown 标记（包括 #、*、_ 或反引号），"
+                "不得生成订单或承诺结果。"
             ),
             context="\n\n".join(context),
         )
