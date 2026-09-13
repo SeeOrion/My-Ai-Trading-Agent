@@ -18,6 +18,8 @@ def test_default_factor_registry_has_explicit_input_contracts() -> None:
 
     assert factor.columns_required == ("fund:roe_pct",)
     assert factor.formula == "fund:roe_pct"
+    assert len(DEFAULT_FACTOR_REGISTRY.list()) == 10
+    assert DEFAULT_FACTOR_REGISTRY.get("book_to_price").columns_required == ("fund:pb_mrq",)
 
 
 def test_factor_metadata_rejects_implicit_unknown_inputs() -> None:

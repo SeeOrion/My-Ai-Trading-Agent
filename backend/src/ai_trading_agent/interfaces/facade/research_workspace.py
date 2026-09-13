@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import FastAPI
@@ -33,11 +34,15 @@ from ai_trading_agent.application.watchlist_detail import GetWatchlistFinancialD
 from ai_trading_agent.domain.ability.factors import DEFAULT_FACTOR_REGISTRY
 from ai_trading_agent.domain.aggregate.fund import FundResearchReport
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
-from ai_trading_agent.domain.aggregate.research import analyze_financial_sentiment
+from ai_trading_agent.domain.aggregate.research import (
+    FinancialSnapshot,
+    analyze_financial_sentiment,
+)
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist_detail import WatchlistFinancialDetail
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
+from ai_trading_agent.domain.service.factor_analysis import analyze_builtin_factors
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
     FutuSettings,
@@ -65,6 +70,7 @@ from ai_trading_agent.infrastructure.rpc.hithink_market import (
     HithinkFinanceMarketDataProvider,
 )
 from ai_trading_agent.infrastructure.rpc.hithink_research import HithinkAshareResearchProvider
+from ai_trading_agent.infrastructure.rpc.hithink_valuations import HithinkAshareValuationProvider
 from ai_trading_agent.infrastructure.rpc.hithink_watchlist_detail import (
     HithinkWatchlistDetailProvider,
 )
@@ -260,6 +266,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
     capital_flow: dict[str, object] | None = None
     news_sentiment: dict[str, object] | None = None
     fund_research: dict[str, object] | None = None
+    financial_snapshot: FinancialSnapshot | None = None
     if _is_hithink_fund(instrument):
         try:
             report = await fund_research_report(instrument)
@@ -298,6 +305,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
             load_runtime_environment()
             provider = HithinkAshareResearchProvider(HithinkFinanceSettings.from_environment())
             fundamental = await AnalyzeFundamentalsHandler(provider).handle(instrument)
+            financial_snapshot = fundamental.snapshot
             fundamentals = {
                 "score": fundamental.score,
                 "observations": list(fundamental.observations),
@@ -336,6 +344,11 @@ async def research(query: ResearchRequest) -> ResearchResponse:
                 }
         except Exception as error:
             notices.append(f"财经资讯情绪暂不可用：{error}")
+    factor_analysis = await builtin_factor_analysis(
+        instrument,
+        financial_snapshot=financial_snapshot,
+        news_sentiment=news_sentiment,
+    )
     return ResearchResponse(
         symbol=instrument.symbol,
         market=instrument.market,
@@ -343,8 +356,98 @@ async def research(query: ResearchRequest) -> ResearchResponse:
         capital_flow=capital_flow,
         news_sentiment=news_sentiment,
         fund_research=fund_research,
+        factor_analysis=factor_analysis,
         notices=notices,
     )
+
+
+async def builtin_factor_analysis(
+    instrument: Instrument,
+    *,
+    financial_snapshot: FinancialSnapshot | None,
+    news_sentiment: dict[str, object] | None,
+) -> dict[str, object]:
+    """Collect bounded inputs and return the ten-factor analysis without hiding gaps."""
+    bars = ()
+    technical_source: str | None = None
+    notices: list[str] = []
+    try:
+        load_runtime_environment()
+        if _is_exchange_etf(instrument):
+            provider = HithinkFundHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
+        elif instrument.market is Market.A_SHARE:
+            provider = HithinkAshareHistoricalBarsProvider(
+                HithinkFinanceSettings.from_environment()
+            )
+        elif instrument.market is Market.FUND:
+            provider = None
+        else:
+            provider = FutuHistoricalBarsProvider(FutuSettings.from_environment())
+        if provider is None:
+            notices.append("场外基金暂无真实 OHLCV，价格类因子不可用。")
+        else:
+            bars = await provider.get_daily_bars(instrument, limit=90)
+            technical_source = provider.name
+    except Exception as error:
+        notices.append(f"日线因子输入暂不可用：{error}")
+
+    pe_ttm = None
+    pb_mrq = None
+    valuation_source: str | None = None
+    if instrument.market is Market.A_SHARE:
+        try:
+            provider = HithinkAshareValuationProvider(HithinkFinanceSettings.from_environment())
+            valuation = await provider.get_valuation_snapshot(instrument)
+            pe_ttm = valuation.pe_ttm
+            pb_mrq = valuation.pb_mrq
+            valuation_source = valuation.source
+        except Exception as error:
+            notices.append(f"估值因子输入暂不可用：{error}")
+
+    sentiment_score = None
+    sentiment_source = None
+    if news_sentiment is not None:
+        raw_score = news_sentiment.get("score")
+        try:
+            sentiment_score = Decimal(str(raw_score)) if raw_score is not None else None
+        except Exception:
+            notices.append("财经资讯情绪分数格式无效。")
+        raw_source = news_sentiment.get("source")
+        sentiment_source = str(raw_source) if raw_source is not None else "public_financial_news"
+
+    analysis = analyze_builtin_factors(
+        instrument,
+        bars,
+        technical_source=technical_source,
+        pe_ttm=pe_ttm,
+        pb_mrq=pb_mrq,
+        roe_pct=financial_snapshot.return_on_equity_pct if financial_snapshot else None,
+        financial_source=(financial_snapshot.source if financial_snapshot else valuation_source),
+        news_sentiment=sentiment_score,
+        news_source=sentiment_source,
+    )
+    return {
+        "observed_at": analysis.observed_at.isoformat(),
+        "available_count": analysis.available_count,
+        "total_count": len(analysis.observations),
+        "supportive_count": analysis.supportive_count,
+        "adverse_count": analysis.adverse_count,
+        "notices": notices,
+        "observations": [
+            {
+                "identifier": item.identifier,
+                "name": item.name,
+                "theme": item.theme,
+                "value": item.value,
+                "unit": item.unit,
+                "direction": item.direction,
+                "interpretation": item.interpretation,
+                "source": item.source,
+                "unavailable_reason": item.unavailable_reason,
+            }
+            for item in analysis.observations
+        ],
+    }
 
 
 async def watchlist_financial_detail(instrument: Instrument):  # type: ignore[no-untyped-def]

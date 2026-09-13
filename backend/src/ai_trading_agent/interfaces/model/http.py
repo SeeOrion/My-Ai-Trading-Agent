@@ -268,6 +268,7 @@ class ResearchResponse(BaseModel):
     capital_flow: dict[str, object] | None
     news_sentiment: dict[str, object] | None
     fund_research: dict[str, object] | None = None
+    factor_analysis: dict[str, object] | None = None
     notices: list[str]
 
 

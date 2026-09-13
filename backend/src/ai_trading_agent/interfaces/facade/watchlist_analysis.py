@@ -99,6 +99,7 @@ async def refresh_watchlist_analysis(
     )
     notices.extend(report.notices)
     tags.extend(_research_tags(report.fundamentals, report.capital_flow, report.news_sentiment))
+    tags.extend(_factor_tags(report.factor_analysis))
     context.append(f"Research: {report.model_dump_json(exclude_none=True)}")
 
     try:
@@ -213,6 +214,31 @@ def _technical_tags(trend: object, momentum: object, volume_pressure: object) ->
     ]
 
 
+def _factor_tags(factor_analysis: dict[str, object] | None) -> list[AnalysisTag]:
+    if factor_analysis is None:
+        return []
+    available = factor_analysis.get("available_count")
+    total = factor_analysis.get("total_count")
+    supportive = factor_analysis.get("supportive_count")
+    adverse = factor_analysis.get("adverse_count")
+    if not isinstance(available, int) or not isinstance(total, int):
+        return []
+    tone = (
+        "positive"
+        if isinstance(supportive, int) and supportive > (adverse or 0)
+        else "negative"
+        if isinstance(adverse, int) and adverse > (supportive or 0)
+        else "neutral"
+    )
+    return [
+        AnalysisTag(
+            "factors",
+            f"因子：{available}/{total} 可用 · 支持 {supportive or 0} · 风险 {adverse or 0}",
+            tone,
+        )
+    ]
+
+
 def _technical_tone(value: str) -> str:
     if any(item in value for item in ("偏多", "上升", "强")):
         return "positive"
@@ -253,7 +279,8 @@ async def _summarize_with_ai(context: list[str], notices: list[str]) -> str | No
         answer = await adviser.answer(
             question=(
                 "请将该自选标的的已确认数据浓缩为 3 条以内、总计不超过 300 字的"
-                "中文研究摘要。只解释事实、缺口和规则状态，不给出个性化交易指令。"
+                "中文研究摘要。优先解释内置因子中有效值、方向和缺口；只解释事实、"
+                "缺口和规则状态，不给出个性化交易指令。"
             ),
             context="\n\n".join(context),
         )
