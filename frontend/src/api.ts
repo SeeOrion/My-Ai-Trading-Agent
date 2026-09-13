@@ -273,3 +273,4 @@ export const fetchPaperValuations = () => request<PaperPositionValuation[]>("/ap
 export const fetchPaperPortfolioOverview = () => request<PaperPortfolioOverview>("/api/v1/paper-positions/overview");
 export const fetchAiSimulationOverview = (market: Exclude<Market, "fund">) => request<AiSimulationOverview>(`/api/v1/ai-simulation/overview?market=${market}`);
 export const runAiSimulation = (payload: AiSimulationRunInput) => request<AiSimulationOverview>("/api/v1/ai-simulation/run", { method: "POST", body: JSON.stringify(payload) });
+export const updateAiSimulationSettings = (payload: AiSimulationRunInput) => request<AiSimulationOverview>("/api/v1/ai-simulation/settings", { method: "PUT", body: JSON.stringify(payload) });
