@@ -115,6 +115,7 @@ export interface ResearchReport {
   capital_flow: Record<string, unknown> | null;
   news_sentiment: Record<string, unknown> | null;
   fund_research: Record<string, unknown> | null;
+  factor_analysis: Record<string, unknown> | null;
   notices: string[];
 }
 
