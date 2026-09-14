@@ -11,7 +11,7 @@ from ai_trading_agent.domain.service.ai_simulation import (
 
 
 def _candidate(
-    *, score: str = "82", supportive: int = 3, adverse: int = 1, price: str = "10"
+    *, score: str = "82", supportive: int = 3, adverse: int = 0, price: str = "10"
 ) -> AiSimulationCandidate:
     return AiSimulationCandidate(
         symbol="600519.SH",
@@ -43,9 +43,19 @@ def test_ai_simulation_uses_risk_budget_and_a_share_board_lots() -> None:
     assert allocation.allocation_percent == Decimal("25")
 
 
-def test_ai_simulation_keeps_cash_when_factor_evidence_or_score_is_insufficient() -> None:
+def test_ai_simulation_allows_entry_when_only_factor_inputs_are_missing() -> None:
     allocation = choose_simulated_entry(
-        _candidate(score="69", supportive=1, adverse=1),
+        AiSimulationCandidate(
+            symbol="600519.SH",
+            display_name="贵州茅台",
+            score=Decimal("82"),
+            last_price=Decimal("10"),
+            supportive_factor_count=0,
+            adverse_factor_count=0,
+            available_factor_ids=(),
+            unavailable_factor_ids=("return_on_equity", "news_sentiment"),
+            rationale=("数据源暂未返回部分因子输入。",),
+        ),
         available_cash=Decimal("100000"),
         initial_capital=Decimal("100000"),
         open_position_count=0,
@@ -54,14 +64,14 @@ def test_ai_simulation_keeps_cash_when_factor_evidence_or_score_is_insufficient(
         lot_size=Decimal("100"),
     )
 
-    assert allocation is None
+    assert allocation is not None
 
 
 def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
     candidate = AiSimulationCandidate(
         symbol="600519.SH",
         display_name="贵州茅台",
-        score=Decimal("65"),
+        score=Decimal("82"),
         last_price=Decimal("1500"),
         supportive_factor_count=0,
         adverse_factor_count=2,
@@ -81,8 +91,7 @@ def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
     )
 
     assert decision.allocation is None
-    assert any("评分" in item for item in decision.blockers)
-    assert any("缺失" in item for item in decision.blockers)
+    assert any("已计算的因子存在不利方向" in item for item in decision.blockers)
     assert any("支持 0 项，逆风 2 项" in item for item in decision.blockers)
     assert any("达到上限" in item for item in decision.blockers)
 

@@ -127,12 +127,9 @@ def evaluate_simulated_entry(
         blockers.append("最新行情价格无效，无法计算模拟买入数量。")
     if candidate.score < Decimal("70"):
         blockers.append(f"候选评分 {candidate.score}/100，低于建仓阈值 70。")
-    if not candidate.available_factor_ids:
-        missing = "、".join(candidate.unavailable_factor_ids) or "所需因子"
-        blockers.append(f"没有可用的策略/内置因子；缺失：{missing}。")
-    if candidate.supportive_factor_count <= candidate.adverse_factor_count:
+    if candidate.adverse_factor_count > 0:
         blockers.append(
-            "因子方向未形成支持优势："
+            "已计算的因子存在不利方向，保守规则不创建模拟仓位："
             f"支持 {candidate.supportive_factor_count} 项，"
             f"逆风 {candidate.adverse_factor_count} 项。"
         )

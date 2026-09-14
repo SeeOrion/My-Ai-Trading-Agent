@@ -165,6 +165,19 @@ async def run_ai_simulation(
         if len(positions) >= portfolio.max_positions:
             break
 
+    unavailable_factor_ids = tuple(
+        dict.fromkeys(
+            factor_id
+            for report in decision_reports
+            for factor_id in report.unavailable_factor_ids
+        )
+    )
+    if unavailable_factor_ids:
+        notices.append(
+            "本轮存在数据缺口："
+            f"{'、'.join(unavailable_factor_ids)}。缺失因子仅作提示，不会单独阻止模拟建仓。"
+        )
+
     overview = await ai_simulation_overview(app, request.market)
     return AiSimulationOverview(
         portfolio=overview.portfolio,
