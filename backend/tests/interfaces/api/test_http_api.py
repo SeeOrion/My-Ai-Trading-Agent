@@ -72,6 +72,7 @@ def test_ai_simulation_contract_exposes_auditable_capital_and_positions() -> Non
 
     assert "/api/v1/ai-simulation/run" in schema["paths"]
     assert "put" in schema["paths"]["/api/v1/ai-simulation/settings"]
+    assert "/api/v1/ai-simulation/runs" in schema["paths"]
     overview_schema = schema["components"]["schemas"]["AiSimulationOverviewResponse"]
     required_overview_fields = {
         "initial_capital",
@@ -88,4 +89,8 @@ def test_ai_simulation_contract_exposes_auditable_capital_and_positions() -> Non
     decision_schema = schema["components"]["schemas"]["AiSimulationDecisionResponse"]
     assert {"display_name", "blockers", "available_factor_ids", "unavailable_factor_ids"} <= set(
         decision_schema["properties"]
+    )
+    run_schema = schema["components"]["schemas"]["AiSimulationRunResponse"]
+    assert {"trigger", "status", "decision_reports", "notices", "error_message"} <= set(
+        run_schema["properties"]
     )

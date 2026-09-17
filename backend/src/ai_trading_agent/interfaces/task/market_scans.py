@@ -9,9 +9,16 @@ from collections.abc import Awaitable, Callable
 class RecurringTaskScheduler:
     """Run one bounded callback at an interval without blocking API traffic."""
 
-    def __init__(self, callback: Callable[[], Awaitable[None]], interval_seconds: int) -> None:
+    def __init__(
+        self,
+        callback: Callable[[], Awaitable[None]],
+        interval_seconds: int,
+        *,
+        run_immediately: bool = True,
+    ) -> None:
         self._callback = callback
         self._interval_seconds = interval_seconds
+        self._run_immediately = run_immediately
         self._stop_requested = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
@@ -25,6 +32,13 @@ class RecurringTaskScheduler:
             await self._task
 
     async def _run(self) -> None:
+        if not self._run_immediately:
+            try:
+                await asyncio.wait_for(
+                    self._stop_requested.wait(), timeout=self._interval_seconds
+                )
+            except TimeoutError:
+                pass
         while not self._stop_requested.is_set():
             try:
                 await self._callback()

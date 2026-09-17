@@ -174,6 +174,30 @@ class AiSimulationTradeRecord(Base):
     rationale: Mapped[list[str]] = mapped_column(JSON, nullable=False)
 
 
+class AiSimulationRunRecord(Base):
+    __tablename__ = "ai_simulation_runs"
+    __table_args__ = (
+        Index("ix_ai_simulation_runs_portfolio_completed", "portfolio_id", "completed_at"),
+        {"schema": SCHEMA},
+    )
+
+    run_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(
+        ForeignKey(f"{SCHEMA}.ai_simulation_portfolios.portfolio_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    market: Mapped[str] = mapped_column(String(32), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    position_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_equity: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    decision_reports: Mapped[list[dict[str, object]]] = mapped_column(JSON, nullable=False)
+    notices: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
 class DocumentRecord(Base, TimestampedRecord):
     __tablename__ = "documents"
     __table_args__ = {"schema": SCHEMA}

@@ -192,6 +192,33 @@ class WatchlistAnalysisSettings:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class AiSimulationSchedulerSettings:
+    """Daily cadence for existing AI paper-trading accounts only."""
+
+    scheduler_enabled: bool = True
+    interval_seconds: int = 86_400
+
+    @classmethod
+    def from_environment(cls) -> AiSimulationSchedulerSettings:
+        raw_enabled = os.environ.get(
+            "AI_SIMULATION_SCHEDULER_ENABLED", "true"
+        ).strip().lower()
+        if raw_enabled not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "AI_SIMULATION_SCHEDULER_ENABLED must be true or false"
+            )
+        return cls(
+            scheduler_enabled=raw_enabled == "true",
+            interval_seconds=_bounded_int(
+                os.environ.get("AI_SIMULATION_INTERVAL_SECONDS", "86400").strip(),
+                "AI_SIMULATION_INTERVAL_SECONDS",
+                minimum=300,
+                maximum=604_800,
+            ),
+        )
+
+
 def _positive_float(value: str, name: str) -> float:
     try:
         parsed = float(value)

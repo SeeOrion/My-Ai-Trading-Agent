@@ -23,12 +23,17 @@ from ai_trading_agent.application.portfolio import (
 from ai_trading_agent.application.strategies import ListStrategiesHandler, SaveStrategyHandler
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
-from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
+from ai_trading_agent.infrastructure.config.providers import (
+    AiSimulationSchedulerSettings,
+    WatchlistAnalysisSettings,
+)
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.ai_simulation import (
     AiSimulationRunRequest,
     ai_simulation_overview,
+    ai_simulation_runs,
     run_ai_simulation,
+    run_scheduled_ai_simulations,
     update_ai_simulation_settings,
 )
 from ai_trading_agent.interfaces.facade.disciplines import (
@@ -73,6 +78,7 @@ from ai_trading_agent.interfaces.model.http import (
     DEFAULT_NEWS_SOURCES,
     AiSimulationOverviewResponse,
     AiSimulationRunInput,
+    AiSimulationRunResponse,
     CandidateResponse,
     CandidateScreenResponse,
     DisciplineInput,
@@ -122,19 +128,30 @@ def create_app(
     @asynccontextmanager
     async def lifespan(application: FastAPI):  # type: ignore[no-untyped-def]
         load_runtime_environment()
-        scheduler: RecurringTaskScheduler | None = None
-        settings = WatchlistAnalysisSettings.from_environment()
-        if enable_scheduled_tasks and settings.scheduler_enabled:
+        schedulers: list[RecurringTaskScheduler] = []
+        watchlist_settings = WatchlistAnalysisSettings.from_environment()
+        if enable_scheduled_tasks and watchlist_settings.scheduler_enabled:
             scheduler = RecurringTaskScheduler(
                 lambda: refresh_all_watchlist_analyses(application),
-                settings.interval_seconds,
+                watchlist_settings.interval_seconds,
             )
             scheduler.start()
             application.state.watchlist_analysis_scheduler = scheduler
+            schedulers.append(scheduler)
+        ai_settings = AiSimulationSchedulerSettings.from_environment()
+        if enable_scheduled_tasks and ai_settings.scheduler_enabled:
+            scheduler = RecurringTaskScheduler(
+                lambda: run_scheduled_ai_simulations(application),
+                ai_settings.interval_seconds,
+                run_immediately=False,
+            )
+            scheduler.start()
+            application.state.ai_simulation_scheduler = scheduler
+            schedulers.append(scheduler)
         try:
             yield
         finally:
-            if scheduler is not None:
+            for scheduler in schedulers:
                 await scheduler.stop()
 
     app = FastAPI(title="My AI Trading Agent API", version="0.3.0", lifespan=lifespan)
@@ -447,6 +464,26 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail=f"AI 模拟组合估值不可用：{error}"
             ) from error
+
+    @app.get(
+        "/api/v1/ai-simulation/runs",
+        response_model=list[AiSimulationRunResponse],
+        tags=["ai-simulation"],
+    )
+    async def get_ai_simulation_runs(
+        market: Market, limit: int = 14
+    ) -> list[AiSimulationRunResponse]:
+        if market is Market.FUND:
+            raise HTTPException(status_code=422, detail="AI 模拟选股当前仅支持股票市场")
+        if not 1 <= limit <= 60:
+            raise HTTPException(status_code=422, detail="limit must be between 1 and 60")
+        try:
+            return [
+                AiSimulationRunResponse.from_domain(item)
+                for item in await ai_simulation_runs(app, market, limit)
+            ]
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"AI 模拟历史读取失败：{error}") from error
 
     @app.post(
         "/api/v1/ai-simulation/run",

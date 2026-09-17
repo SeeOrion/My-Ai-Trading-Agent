@@ -8,6 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.domain.service.position_metrics import calculate_position_metrics
 
 
@@ -123,6 +124,42 @@ class AiSimulationDecisionReport:
             raise ValueError("factor counts must not be negative")
         if self.decision == "skip" and not self.blockers:
             raise ValueError("skipped simulation candidates require blockers")
+
+
+@dataclass(frozen=True, slots=True)
+class AiSimulationRun:
+    """Persisted result of one manual or scheduled AI paper-trading cycle."""
+
+    run_id: UUID
+    portfolio_id: UUID
+    market: Market
+    trigger: str
+    status: str
+    started_at: datetime
+    completed_at: datetime
+    position_count: int
+    total_equity: Decimal | None
+    decision_reports: tuple[AiSimulationDecisionReport, ...] = ()
+    notices: tuple[str, ...] = ()
+    error_message: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.trigger not in {"manual", "scheduled"}:
+            raise ValueError("invalid simulation run trigger")
+        if self.status not in {"completed", "failed"}:
+            raise ValueError("invalid simulation run status")
+        if self.started_at.tzinfo is None or self.completed_at.tzinfo is None:
+            raise ValueError("simulation run timestamps must be timezone-aware")
+        if self.completed_at < self.started_at or self.position_count < 0:
+            raise ValueError("simulation run values are invalid")
+        if self.total_equity is not None and self.total_equity < 0:
+            raise ValueError("simulation run equity must not be negative")
+        if self.status == "failed" and not (self.error_message or "").strip():
+            raise ValueError("failed simulation runs require an error message")
+        object.__setattr__(self, "started_at", self.started_at.astimezone(UTC))
+        object.__setattr__(self, "completed_at", self.completed_at.astimezone(UTC))
+        if self.error_message is not None:
+            object.__setattr__(self, "error_message", self.error_message.strip() or None)
 
 
 @dataclass(frozen=True, slots=True)

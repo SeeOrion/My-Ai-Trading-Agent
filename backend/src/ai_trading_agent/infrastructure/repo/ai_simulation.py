@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from ai_trading_agent.domain.aggregate.ai_simulation import (
     AiSimulationPortfolio,
     AiSimulationPosition,
+    AiSimulationRun,
     AiSimulationTrade,
 )
 from ai_trading_agent.domain.aggregate.market import Instrument
@@ -18,6 +19,7 @@ from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.repo.models import (
     AiSimulationPortfolioRecord,
     AiSimulationPositionRecord,
+    AiSimulationRunRecord,
     AiSimulationTradeRecord,
 )
 
@@ -38,6 +40,17 @@ class SqlAlchemyAiSimulationRepository:
                 .limit(1)
             )
             return None if record is None else _portfolio(record)
+
+    async def list_active(self) -> list[AiSimulationPortfolio]:
+        async with self._sessions() as session:
+            records = (
+                await session.scalars(
+                    select(AiSimulationPortfolioRecord)
+                    .where(AiSimulationPortfolioRecord.status == "active")
+                    .order_by(AiSimulationPortfolioRecord.updated_at.desc())
+                )
+            ).all()
+            return [_portfolio(record) for record in records]
 
     async def save_portfolio(self, portfolio: AiSimulationPortfolio) -> AiSimulationPortfolio:
         async with self._sessions() as session:
@@ -110,6 +123,52 @@ class SqlAlchemyAiSimulationRepository:
             await session.refresh(record)
             return _trade(record)
 
+    async def save_run(self, run: AiSimulationRun) -> AiSimulationRun:
+        async with self._sessions() as session:
+            record = AiSimulationRunRecord(
+                run_id=str(run.run_id),
+                portfolio_id=str(run.portfolio_id),
+                market=run.market.value,
+                trigger=run.trigger,
+                status=run.status,
+                started_at=run.started_at,
+                completed_at=run.completed_at,
+                position_count=run.position_count,
+                total_equity=run.total_equity,
+                decision_reports=[
+                    {
+                        "symbol": item.symbol,
+                        "display_name": item.display_name,
+                        "score": str(item.score),
+                        "decision": item.decision,
+                        "supportive_factor_count": item.supportive_factor_count,
+                        "adverse_factor_count": item.adverse_factor_count,
+                        "available_factor_ids": list(item.available_factor_ids),
+                        "unavailable_factor_ids": list(item.unavailable_factor_ids),
+                        "blockers": list(item.blockers),
+                    }
+                    for item in run.decision_reports
+                ],
+                notices=list(run.notices),
+                error_message=run.error_message,
+            )
+            session.add(record)
+            await session.commit()
+            await session.refresh(record)
+            return _run(record)
+
+    async def list_runs(self, market: Market, limit: int) -> list[AiSimulationRun]:
+        async with self._sessions() as session:
+            records = (
+                await session.scalars(
+                    select(AiSimulationRunRecord)
+                    .where(AiSimulationRunRecord.market == market.value)
+                    .order_by(AiSimulationRunRecord.completed_at.desc())
+                    .limit(limit)
+                )
+            ).all()
+            return [_run(record) for record in records]
+
 
 def _portfolio(record: AiSimulationPortfolioRecord) -> AiSimulationPortfolio:
     return AiSimulationPortfolio(
@@ -153,4 +212,40 @@ def _trade(record: AiSimulationTradeRecord) -> AiSimulationTrade:
         price=Decimal(str(record.price)),
         executed_at=record.executed_at,
         rationale=tuple(str(item) for item in record.rationale),
+    )
+
+
+def _run(record: AiSimulationRunRecord) -> AiSimulationRun:
+    from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationDecisionReport
+
+    return AiSimulationRun(
+        run_id=UUID(record.run_id),
+        portfolio_id=UUID(record.portfolio_id),
+        market=Market(record.market),
+        trigger=record.trigger,
+        status=record.status,
+        started_at=record.started_at,
+        completed_at=record.completed_at,
+        position_count=record.position_count,
+        total_equity=None if record.total_equity is None else Decimal(str(record.total_equity)),
+        decision_reports=tuple(
+            AiSimulationDecisionReport(
+                symbol=str(item["symbol"]),
+                display_name=None
+                if item.get("display_name") is None
+                else str(item["display_name"]),
+                score=Decimal(str(item["score"])),
+                decision=str(item["decision"]),
+                supportive_factor_count=int(item["supportive_factor_count"]),
+                adverse_factor_count=int(item["adverse_factor_count"]),
+                available_factor_ids=tuple(str(value) for value in item["available_factor_ids"]),
+                unavailable_factor_ids=tuple(
+                    str(value) for value in item["unavailable_factor_ids"]
+                ),
+                blockers=tuple(str(value) for value in item["blockers"]),
+            )
+            for item in record.decision_reports
+        ),
+        notices=tuple(str(item) for item in record.notices),
+        error_message=record.error_message,
     )

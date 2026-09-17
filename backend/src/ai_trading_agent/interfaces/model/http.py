@@ -688,6 +688,51 @@ class AiSimulationDecisionResponse(BaseModel):
     blockers: list[str]
 
 
+class AiSimulationRunResponse(BaseModel):
+    run_id: UUID
+    portfolio_id: UUID
+    market: Market
+    trigger: str
+    status: str
+    started_at: str
+    completed_at: str
+    position_count: int
+    total_equity: Decimal | None
+    decision_reports: list[AiSimulationDecisionResponse]
+    notices: list[str]
+    error_message: str | None
+
+    @classmethod
+    def from_domain(cls, run) -> AiSimulationRunResponse:  # type: ignore[no-untyped-def]
+        return cls(
+            run_id=run.run_id,
+            portfolio_id=run.portfolio_id,
+            market=run.market,
+            trigger=run.trigger,
+            status=run.status,
+            started_at=run.started_at.isoformat(),
+            completed_at=run.completed_at.isoformat(),
+            position_count=run.position_count,
+            total_equity=run.total_equity,
+            decision_reports=[
+                AiSimulationDecisionResponse(
+                    symbol=item.symbol,
+                    display_name=item.display_name,
+                    score=item.score,
+                    decision=item.decision,
+                    supportive_factor_count=item.supportive_factor_count,
+                    adverse_factor_count=item.adverse_factor_count,
+                    available_factor_ids=list(item.available_factor_ids),
+                    unavailable_factor_ids=list(item.unavailable_factor_ids),
+                    blockers=list(item.blockers),
+                )
+                for item in run.decision_reports
+            ],
+            notices=list(run.notices),
+            error_message=run.error_message,
+        )
+
+
 class AiSimulationOverviewResponse(BaseModel):
     portfolio_id: UUID
     market: Market

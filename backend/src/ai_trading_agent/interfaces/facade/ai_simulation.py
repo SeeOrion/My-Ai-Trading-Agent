@@ -17,6 +17,7 @@ from ai_trading_agent.domain.aggregate.ai_simulation import (
     AiSimulationPortfolio,
     AiSimulationPosition,
     AiSimulationPositionValuation,
+    AiSimulationRun,
     AiSimulationTrade,
 )
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
@@ -46,6 +47,7 @@ class AiSimulationRunRequest:
     initial_capital: Decimal
     max_positions: int = 3
     strategy_id: UUID | None = None
+    trigger: str = "manual"
 
 
 def ai_simulation_repository(app: FastAPI) -> SqlAlchemyAiSimulationRepository:
@@ -56,6 +58,7 @@ async def run_ai_simulation(
     app: FastAPI, request: AiSimulationRunRequest
 ) -> AiSimulationOverview:
     """Run one bounded, deterministic AI paper-trading review for one market."""
+    started_at = datetime.now(UTC)
     repository = ai_simulation_repository(app)
     strategy = await _select_strategy(app, request.market, request.strategy_id)
     _ensure_requested_strategy(request.strategy_id, strategy)
@@ -179,7 +182,7 @@ async def run_ai_simulation(
         )
 
     overview = await ai_simulation_overview(app, request.market)
-    return AiSimulationOverview(
+    result = AiSimulationOverview(
         portfolio=overview.portfolio,
         observed_at=overview.observed_at,
         positions=overview.positions,
@@ -192,6 +195,22 @@ async def run_ai_simulation(
         notices=tuple(dict.fromkeys((*overview.notices, *notices))),
         decision_reports=tuple(decision_reports),
     )
+    await repository.save_run(
+        AiSimulationRun(
+            run_id=uuid4(),
+            portfolio_id=result.portfolio.portfolio_id,
+            market=request.market,
+            trigger=request.trigger,
+            status="completed",
+            started_at=started_at,
+            completed_at=datetime.now(UTC),
+            position_count=len(result.positions),
+            total_equity=result.total_equity,
+            decision_reports=result.decision_reports,
+            notices=result.notices,
+        )
+    )
+    return result
 
 
 async def update_ai_simulation_settings(
@@ -223,6 +242,51 @@ async def update_ai_simulation_settings(
             )
         ),
     )
+
+
+async def ai_simulation_runs(
+    app: FastAPI, market: Market, limit: int = 14
+) -> list[AiSimulationRun]:
+    return await ai_simulation_repository(app).list_runs(market, limit)
+
+
+async def run_scheduled_ai_simulations(app: FastAPI) -> None:
+    """Run existing private AI accounts sequentially and persist every outcome."""
+    repository = ai_simulation_repository(app)
+    for portfolio in await repository.list_active():
+        market = Market(portfolio.market)
+        started_at = datetime.now(UTC)
+        try:
+            await run_ai_simulation(
+                app,
+                AiSimulationRunRequest(
+                    market=market,
+                    initial_capital=portfolio.initial_capital,
+                    max_positions=portfolio.max_positions,
+                    strategy_id=portfolio.strategy_id,
+                    trigger="scheduled",
+                ),
+            )
+        except Exception as error:
+            try:
+                position_count = len(await repository.list_open_positions(portfolio.portfolio_id))
+                await repository.save_run(
+                    AiSimulationRun(
+                        run_id=uuid4(),
+                        portfolio_id=portfolio.portfolio_id,
+                        market=market,
+                        trigger="scheduled",
+                        status="failed",
+                        started_at=started_at,
+                        completed_at=datetime.now(UTC),
+                        position_count=position_count,
+                        total_equity=None,
+                        error_message=str(error)[:1_000],
+                    )
+                )
+            except Exception:
+                # A database outage must not prevent the next account or next day from running.
+                continue
 
 
 async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:
