@@ -141,7 +141,9 @@ def create_app(
         ai_settings = AiSimulationSchedulerSettings.from_environment()
         if enable_scheduled_tasks and ai_settings.scheduler_enabled:
             scheduler = RecurringTaskScheduler(
-                lambda: run_scheduled_ai_simulations(application),
+                lambda: run_scheduled_ai_simulations(
+                    application, weekdays_only=ai_settings.weekdays_only
+                ),
                 ai_settings.interval_seconds,
                 run_immediately=False,
             )

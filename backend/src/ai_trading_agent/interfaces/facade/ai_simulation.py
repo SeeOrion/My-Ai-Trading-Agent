@@ -250,8 +250,12 @@ async def ai_simulation_runs(
     return await ai_simulation_repository(app).list_runs(market, limit)
 
 
-async def run_scheduled_ai_simulations(app: FastAPI) -> None:
+async def run_scheduled_ai_simulations(
+    app: FastAPI, *, weekdays_only: bool = True
+) -> None:
     """Run existing private AI accounts sequentially and persist every outcome."""
+    if weekdays_only and not _is_weekday(datetime.now()):
+        return
     repository = ai_simulation_repository(app)
     for portfolio in await repository.list_active():
         market = Market(portfolio.market)
@@ -287,6 +291,11 @@ async def run_scheduled_ai_simulations(app: FastAPI) -> None:
             except Exception:
                 # A database outage must not prevent the next account or next day from running.
                 continue
+
+
+def _is_weekday(observed_at: datetime) -> bool:
+    """Use the server's local calendar so the daily job stays quiet on weekends."""
+    return observed_at.weekday() < 5
 
 
 async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:

@@ -198,6 +198,7 @@ class AiSimulationSchedulerSettings:
 
     scheduler_enabled: bool = True
     interval_seconds: int = 86_400
+    weekdays_only: bool = True
 
     @classmethod
     def from_environment(cls) -> AiSimulationSchedulerSettings:
@@ -208,6 +209,11 @@ class AiSimulationSchedulerSettings:
             raise ProviderConfigurationError(
                 "AI_SIMULATION_SCHEDULER_ENABLED must be true or false"
             )
+        raw_weekdays_only = os.environ.get(
+            "AI_SIMULATION_WEEKDAYS_ONLY", "true"
+        ).strip().lower()
+        if raw_weekdays_only not in {"true", "false"}:
+            raise ProviderConfigurationError("AI_SIMULATION_WEEKDAYS_ONLY must be true or false")
         return cls(
             scheduler_enabled=raw_enabled == "true",
             interval_seconds=_bounded_int(
@@ -216,6 +222,7 @@ class AiSimulationSchedulerSettings:
                 minimum=300,
                 maximum=604_800,
             ),
+            weekdays_only=raw_weekdays_only == "true",
         )
 
 

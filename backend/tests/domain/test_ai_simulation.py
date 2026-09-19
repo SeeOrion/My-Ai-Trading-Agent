@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -8,6 +9,7 @@ from ai_trading_agent.domain.service.ai_simulation import (
     evaluate_simulated_entry,
     reconfigure_simulation_portfolio,
 )
+from ai_trading_agent.interfaces.facade.ai_simulation import _is_weekday
 
 
 def _candidate(
@@ -142,3 +144,8 @@ def test_reconfigure_simulation_portfolio_rejects_conflicting_open_positions() -
         assert "最多持仓" in str(error)
     else:
         raise AssertionError("expected conflicting account settings to be rejected")
+
+
+def test_ai_simulation_scheduler_skips_weekends_by_local_calendar() -> None:
+    assert _is_weekday(datetime(2026, 9, 18, 9, 0))
+    assert not _is_weekday(datetime(2026, 9, 19, 9, 0))
