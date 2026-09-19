@@ -26,6 +26,22 @@ const navigation: Array<{ id: Page; label: string; description: string }> = [
   { id: "settings", label: "设置", description: "私有部署与连接配置" }
 ];
 
+const marketLabels: Record<Market, string> = {
+  a_share: "A 股",
+  hong_kong: "港股",
+  united_states: "美股",
+  fund: "场外基金"
+};
+
+const instrumentTypeLabels: Record<Exclude<InstrumentType, "option">, string> = {
+  equity: "股票",
+  etf: "ETF（场内）",
+  fund: "公募基金（场外）"
+};
+
+const fundResearchMarkets: readonly Market[] = ["a_share", "fund"];
+const fundResearchInstrumentTypes: readonly Exclude<InstrumentType, "option">[] = ["etf", "fund"];
+
 const defaultStrategy: StrategyInput = {
   name: "我的研究策略", thesis: "关注高质量、估值合理且有正向新闻催化的标的。",
   factor_ids: ["momentum_20d", "return_on_equity"], markets: ["a_share"],
@@ -72,7 +88,7 @@ function App() {
   </main>;
 }
 
-function TickerFields({ symbol, market, instrumentType = "equity", setSymbol, setMarket }: { symbol: string; market: Market; instrumentType?: InstrumentType; setSymbol: (value: string) => void; setMarket: (value: Market) => void }) {
+function TickerFields({ symbol, market, instrumentType = "equity", setSymbol, setMarket, allowedMarkets }: { symbol: string; market: Market; instrumentType?: InstrumentType; setSymbol: (value: string) => void; setMarket: (value: Market) => void; allowedMarkets?: readonly Market[] }) {
   const [displayName, setDisplayName] = useState<string | null>(null);
   useEffect(() => {
     const query = symbol.trim();
@@ -85,11 +101,13 @@ function TickerFields({ symbol, market, instrumentType = "equity", setSymbol, se
     }, 350);
     return () => { active = false; window.clearTimeout(timeout); };
   }, [symbol, market, instrumentType]);
-  return <div className="ticker-fields"><div className="form-row"><label>代码<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="股票填 600737；ETF 填 510300.SH；基金填 025480.OF" /></label><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as Market)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option><option value="fund">场外基金</option></select></label></div>{displayName && <p className="identity-hint">识别标的：<strong>{displayName}</strong> · {symbol.trim().toUpperCase()}</p>}</div>;
+  const markets = allowedMarkets ?? (Object.keys(marketLabels) as Market[]);
+  return <div className="ticker-fields"><div className="form-row"><label>代码<input value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="股票填 600737；ETF 填 510300.SH；基金填 025480.OF" /></label><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as Market)}>{markets.map((marketOption) => <option key={marketOption} value={marketOption}>{marketLabels[marketOption]}</option>)}</select></label></div>{displayName && <p className="identity-hint">识别标的：<strong>{displayName}</strong> · {symbol.trim().toUpperCase()}</p>}</div>;
 }
 
-function InstrumentTypeField({ value, setValue }: { value: InstrumentType; setValue: (value: InstrumentType) => void }) {
-  return <label>类别<select value={value} onChange={(event) => setValue(event.target.value as InstrumentType)}><option value="equity">股票</option><option value="etf">ETF（场内）</option><option value="fund">公募基金（场外）</option></select></label>;
+function InstrumentTypeField({ value, setValue, allowedTypes }: { value: InstrumentType; setValue: (value: InstrumentType) => void; allowedTypes?: readonly Exclude<InstrumentType, "option">[] }) {
+  const types = allowedTypes ?? (Object.keys(instrumentTypeLabels) as Exclude<InstrumentType, "option">[]);
+  return <label>类别<select value={value} onChange={(event) => setValue(event.target.value as InstrumentType)}>{types.map((instrumentType) => <option key={instrumentType} value={instrumentType}>{instrumentTypeLabels[instrumentType]}</option>)}</select></label>;
 }
 
 function Dashboard() {
@@ -413,9 +431,11 @@ function formatPortfolioChange(value: string | null, currency: string, percent: 
 function FundWorkspace() {
   const [symbol, setSymbol] = useState("510300.SH"); const [market, setMarket] = useState<Market>("a_share"); const [instrumentType, setInstrumentType] = useState<InstrumentType>("etf");
   const [report, setReport] = useState<FundResearch | null>(null); const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  function setFundMarket(nextMarket: Market) { setMarket(nextMarket); setInstrumentType(nextMarket === "fund" ? "fund" : "etf"); setReport(null); }
+  function setFundInstrumentType(nextType: InstrumentType) { setInstrumentType(nextType); setMarket(nextType === "fund" ? "fund" : "a_share"); setReport(null); }
   async function submit(event: FormEvent) { event.preventDefault(); setLoading(true); setError(null); try { setReport(await fetchFundResearch(symbol, market, instrumentType)); } catch (reason) { setError(reason instanceof Error ? reason.message : "基金研究请求失败"); } finally { setLoading(false); } }
   const fund = report?.fund;
-  return <section className="panel"><div className="panel-head"><div><h2>基金与 ETF 深度研究</h2><p>ETF 使用场内行情和日 K；场外基金使用净值和定期披露，不会伪造成实时成交数据。</p></div></div><form onSubmit={submit}><TickerFields symbol={symbol} market={market} instrumentType={instrumentType} setSymbol={setSymbol} setMarket={setMarket} /><InstrumentTypeField value={instrumentType} setValue={setInstrumentType} /><button className="primary" disabled={loading}>{loading ? "读取基金数据…" : "分析基金 / ETF"}</button></form>{error && <div className="notice">{error}</div>}{fund && <div className="research-results"><DataCard title="基金概览与最新净值" data={fund.overview as Record<string, unknown>} /><DataCard title="区间收益与回撤（%）" data={{ returns_percent: fund.returns_percent, drawdowns_percent: fund.drawdowns_percent }} /><DataCard title="重仓持仓与资产配置（披露口径）" data={{ holdings: fund.holdings, asset_allocations: fund.asset_allocations, institutional_holding_percent: fund.institutional_holding_percent }} /><DataCard title="基金诊断与资讯" data={{ diagnostics: fund.diagnostics, news: fund.news, limitations: fund.limitations }} /></div>}</section>;
+  return <section className="panel"><div className="panel-head"><div><h2>基金与 ETF 深度研究</h2><p>仅研究 ETF 与公募基金。ETF 固定使用 A 股场内行情和日 K；场外基金固定使用净值和定期披露。</p></div></div><form onSubmit={submit}><TickerFields symbol={symbol} market={market} instrumentType={instrumentType} setSymbol={setSymbol} setMarket={setFundMarket} allowedMarkets={fundResearchMarkets} /><InstrumentTypeField value={instrumentType} setValue={setFundInstrumentType} allowedTypes={fundResearchInstrumentTypes} /><button className="primary" disabled={loading}>{loading ? "读取基金数据…" : "分析基金 / ETF"}</button></form>{error && <div className="notice">{error}</div>}{fund && <div className="research-results"><DataCard title="基金概览与最新净值" data={fund.overview as Record<string, unknown>} /><DataCard title="区间收益与回撤（%）" data={{ returns_percent: fund.returns_percent, drawdowns_percent: fund.drawdowns_percent }} /><DataCard title="重仓持仓与资产配置（披露口径）" data={{ holdings: fund.holdings, asset_allocations: fund.asset_allocations, institutional_holding_percent: fund.institutional_holding_percent }} /><DataCard title="基金诊断与资讯" data={{ diagnostics: fund.diagnostics, news: fund.news, limitations: fund.limitations }} /></div>}</section>;
 }
 
 function TechnicalStudyView({ study }: { study: TechnicalStudy }) {
