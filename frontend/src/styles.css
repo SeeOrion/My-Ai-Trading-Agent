@@ -93,3 +93,55 @@ header { gap: 16px; margin-bottom: 18px; } h1 { margin-bottom: 5px; font-size: c
     min-width: 0;
   }
 }
+
+/* Watchlist research: render structured results as readable analysis cards, never raw payloads. */
+.research-insight-grid,.fund-disclosure-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.research-insight-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 14px; border: 1px solid #dce5f0; border-radius: 9px; background: #fbfdff; }
+.research-insight-card.wide { grid-column: 1 / -1; }
+.research-card-head h4 { margin: 0; color: #253650; font-size: 15px; }
+.research-card-head small { display: block; margin-top: 4px; color: #748298; font-size: 11px; }
+.research-score,.research-direction { display: flex; align-items: baseline; gap: 8px; }
+.research-score strong { color: #2563eb; font-size: 29px; line-height: 1; }
+.research-score span,.research-direction span { color: #718096; font-size: 12px; }
+.research-direction strong { font-size: 18px; }
+.research-direction.positive strong { color: #c23434; }
+.research-direction.negative strong { color: #168255; }
+.research-direction.neutral strong { color: #46566d; }
+.research-metric-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 0; }
+.research-metric-list div { min-width: 0; padding-left: 9px; border-left: 2px solid #9abcf3; }
+.research-metric-list dt { color: #748298; font-size: 11px; }
+.research-metric-list dd { margin: 4px 0 0; color: #30415b; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.research-bullet-list h5,.disclosure-metrics h5 { margin: 0 0 6px; color: #607087; font-size: 12px; }
+.research-bullet-list ul { display: grid; gap: 5px; margin: 0; padding-left: 18px; color: #536279; font-size: 12px; line-height: 1.55; }
+.sentiment-terms,.factor-summary { display: flex; flex-wrap: wrap; gap: 6px; }
+.research-factor-list { display: grid; gap: 7px; }
+.research-factor-list article { display: grid; grid-template-columns: minmax(130px, 1fr) auto minmax(58px, auto); gap: 7px 10px; align-items: center; padding: 9px 10px; border: 1px solid #e0e7f1; border-radius: 7px; background: #ffffff; }
+.research-factor-list article > div { display: grid; gap: 2px; min-width: 0; }
+.research-factor-list strong { color: #364a67; font-size: 13px; }
+.research-factor-list small { color: #78879b; font-size: 11px; }
+.research-factor-list b { color: #34455e; font-size: 12px; text-align: right; }
+.research-factor-list p { grid-column: 1 / -1; margin: 0; color: #607087; font-size: 12px; line-height: 1.5; }
+.research-note { margin: 0; padding: 8px 10px; border-left: 2px solid #e5a642; border-radius: 0 6px 6px 0; color: #846221; background: #fffaf1; font-size: 12px; line-height: 1.5; }
+.fund-watchlist-detail { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e1e7f0; }
+.fund-disclosure-grid { margin-top: 0; }
+.disclosure-metrics + .disclosure-metrics { padding-top: 10px; border-top: 1px solid #e7edf5; }
+.fund-holdings-list { display: grid; gap: 0; }
+.fund-holdings-list article { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(68px, auto) minmax(56px, auto) minmax(90px, auto); gap: 9px; align-items: center; padding: 8px 0; border-top: 1px solid #e7edf5; }
+.fund-holdings-list article:first-child { padding-top: 0; border-top: 0; }
+.fund-holdings-list strong { color: #34455e; font-size: 13px; }
+.fund-holdings-list span,.fund-holdings-list small { color: #718096; font-size: 11px; }
+.fund-holdings-list b { color: #285eb6; font-size: 12px; text-align: right; }
+.fund-news-list { display: grid; gap: 8px; }
+.fund-news-list article { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid #e7edf5; }
+.fund-news-list article:first-child { padding-top: 0; border-top: 0; }
+.fund-news-list strong { color: #364a67; font-size: 13px; }
+.fund-news-list p { margin: 4px 0 0; color: #627187; font-size: 12px; line-height: 1.5; }
+.fund-news-list small { flex: 0 0 auto; color: #7b879b; font-size: 11px; text-align: right; }
+@media (max-width: 760px) {
+  .research-insight-grid,.fund-disclosure-grid { grid-template-columns: 1fr; }
+  .research-insight-card.wide { grid-column: auto; }
+  .fund-holdings-list article { grid-template-columns: minmax(100px, 1fr) auto; }
+  .fund-holdings-list article small { grid-column: 1 / -1; }
+  .fund-news-list article { display: grid; gap: 5px; }
+  .fund-news-list small { text-align: left; }
+}

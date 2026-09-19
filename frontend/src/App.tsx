@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import {
   createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
@@ -46,6 +46,10 @@ const uiValueLabels: Record<string, string> = {
   equity: "股票",
   etf: "场内 ETF",
   fund: "场外基金",
+  stock: "股票",
+  bond: "债券",
+  cash: "现金",
+  other: "其他资产",
   partial: "部分数据可用",
   completed: "已完成",
   failed: "失败",
@@ -402,7 +406,8 @@ function WatchlistWorkspace() {
 }
 
 function WatchlistDetail({ item, quote, report, study, analysis, deepDive, timeframe, onTimeframeChange, loading, onRefresh, refreshing }: { item: WatchlistItem; quote: Quote | null; report: ResearchReport | null; study: TechnicalStudy | null; analysis: WatchlistAnalysis | null; deepDive: WatchlistFinancialDetail | null; timeframe: TechnicalTimeframe; onTimeframeChange: (value: TechnicalTimeframe) => void; loading: boolean; onRefresh: () => void; refreshing: boolean }) {
-  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">研究分析与深度跟踪</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪、因子与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="今日成交量" value={quote?.volume ?? "—"} /><Metric label="来源" value={quote ? displayText(quote.source) : "—"} /><Metric label="状态" value={analysis ? displayText(analysis.status) : "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{displayText(tag.label)}</span>)}</div>{analysis.ai_summary && <CleanResearchSummary summary={analysis.ai_summary} />}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{deepDive && <FinancialDeepDive detail={deepDive} />}{report && <section className="deep-research-section"><div><p className="eyebrow">研究分析</p><h3>研究分析</h3></div><div className="research-results"><DataCard title="基本面" data={report.fundamentals} /><DataCard title="资金流" data={report.capital_flow} /><DataCard title="新闻情绪" data={report.news_sentiment} /><DataCard title="10 个内置因子" data={report.factor_analysis} /></div>{report.fund_research && <FundWatchlistDetail data={report.fund_research} />}{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}<section className="deep-research-section"><div className="panel-head"><div><p className="eyebrow">深度跟踪</p><h3>深度跟踪：K 线、均线与成交量</h3></div><label className="timeframe-control">周期<select value={timeframe} onChange={(event) => onTimeframeChange(event.target.value as TechnicalTimeframe)}><option value="1d">日 K</option><option value="1w">周 K</option><option value="1m">月 K</option></select></label></div>{study ? <TechnicalStudyView study={study} /> : <p className="muted">正在更新 {timeframe === "1d" ? "日 K" : timeframe === "1w" ? "周 K" : "月 K"} 数据…</p>}</section></section>;
+  const isFund = item.instrument_type === "etf" || item.instrument_type === "fund";
+  return <section className="panel watchlist-detail"><div className="panel-head"><div><p className="eyebrow">研究分析与深度跟踪</p><h2>{item.label || item.symbol}</h2><p>研究分析与深度跟踪已合并：仅拉取此自选标的的行情、基本面、资金、资讯情绪、因子与 K 线数据。</p></div><button className="primary" onClick={onRefresh} disabled={refreshing}>{refreshing ? "正在生成摘要…" : "更新 AI 解读"}</button></div>{loading && <p className="muted">正在读取当日成交和研究数据…</p>}<div className="metric-grid"><Metric label="现价" value={quote ? `${quote.last_price} ${quote.currency}` : "—"} /><Metric label="今日成交量" value={quote?.volume ?? "—"} /><Metric label="来源" value={quote ? displayText(quote.source) : "—"} /><Metric label="状态" value={analysis ? displayText(analysis.status) : "—"} /></div>{analysis && <><div className="tag-list detail-tags">{analysis.tags.map((tag) => <span className={`tag ${tag.tone}`} key={tag.category}>{displayText(tag.label)}</span>)}</div>{analysis.ai_summary && <CleanResearchSummary summary={analysis.ai_summary} />}{analysis.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}{deepDive && <FinancialDeepDive detail={deepDive} />}{report && <section className="deep-research-section"><div><p className="eyebrow">研究分析</p><h3>{isFund ? "基金 / ETF 研究分析" : "股票研究分析"}</h3><p className="muted">将各数据源的结构化结果整理为可读摘要；披露类数据以公开披露时间为准。</p></div><div className="research-insight-grid"><FundamentalsResearchCard data={report.fundamentals} isFund={isFund} /><CapitalFlowResearchCard data={report.capital_flow} isFund={isFund} /><SentimentResearchCard data={report.news_sentiment} /><FactorResearchCard data={report.factor_analysis} /></div>{report.fund_research && <FundWatchlistDetail data={report.fund_research} />}{report.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>}<section className="deep-research-section"><div className="panel-head"><div><p className="eyebrow">深度跟踪</p><h3>深度跟踪：K 线、均线与成交量</h3></div><label className="timeframe-control">周期<select value={timeframe} onChange={(event) => onTimeframeChange(event.target.value as TechnicalTimeframe)}><option value="1d">日 K</option><option value="1w">周 K</option><option value="1m">月 K</option></select></label></div>{study ? <TechnicalStudyView study={study} /> : <p className="muted">正在更新 {timeframe === "1d" ? "日 K" : timeframe === "1w" ? "周 K" : "月 K"} 数据…</p>}</section></section>;
 }
 
 function CleanResearchSummary({ summary }: { summary: string }) {
@@ -423,12 +428,138 @@ function FinancialDeepDive({ detail }: { detail: WatchlistFinancialDetail }) {
   return <section className="deep-research-section financial-deep-dive"><div><p className="eyebrow">已披露财务详情</p><h3>财务、估值与时间催化剂</h3><p className="muted">数据源：{displayText(detail.source)} · 更新于 {new Date(detail.observed_at).toLocaleString()}。财报为已披露口径，时间催化剂不推断未来事件。</p></div>{hasCompanyData && <div className="financial-section-grid">{income && <FinancialMetricCard title="利润表" caption={`报告期 ${income.report_period} · 披露 ${income.announced_on}`} metrics={[['营业收入', income.operating_income], ['营业利润', income.operating_profit], ['净利润', income.net_profit], ['基本每股收益', income.basic_eps]]} />}{cashFlow && <FinancialMetricCard title="现金流" caption={`报告期 ${cashFlow.report_period}`} metrics={[['经营活动现金流', cashFlow.operating_cash_flow], ['投资活动现金流', cashFlow.investing_cash_flow], ['筹资活动现金流', cashFlow.financing_cash_flow], ['现金净增加额', cashFlow.net_cash_change]]} />}{balance && <FinancialMetricCard title="资产负债结构" caption={`报告期 ${balance.report_period}`} metrics={[['资产总计', balance.total_assets], ['负债合计', balance.total_debt], ['所有者权益', balance.total_equity], ['货币资金', balance.cash], ['应收账款', balance.accounts_receivable], ['资产负债率', balance.debt_to_assets_percent, '%']]} />}{valuation && <FinancialMetricCard title="估值定价" caption={valuation.observed_at ? `快照 ${new Date(valuation.observed_at).toLocaleString()}` : '快照时间未提供'} metrics={[['市盈率（TTM）', valuation.price_to_earnings_ttm], ['市盈率（MRQ）', valuation.price_to_earnings_mrq], ['市净率（MRQ）', valuation.price_to_book_mrq], ['市销率（TTM）', valuation.price_to_sales_ttm], ['市现率（TTM）', valuation.price_to_cash_flow_ttm]]} />}</div>}{detail.time_catalysts.length > 0 && <section className="catalyst-list"><h4>时间催化剂（已披露）</h4>{detail.time_catalysts.map((item) => <article className="catalyst-item" key={`${item.kind}-${item.occurred_on}-${item.title}`}><time>{item.occurred_on}</time><div><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</section>}{detail.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>;
 }
 
+function FundamentalsResearchCard({ data, isFund }: { data: Record<string, unknown> | null; isFund: boolean }) {
+  if (!data) return <ResearchEmptyCard title={isFund ? "基金概览" : "基本面评估"} />;
+  if (isFund) return <ResearchInsightCard title="基金概览" caption="公开披露与最新净值"><ResearchMetricList metrics={[["基金名称", data.name], ["管理人", data.management_company], ["基金经理", data.manager_name], ["基金规模", data.fund_scale], ["最新单位净值", data.latest_unit_nav], ["数据来源", displayText(String(data.source ?? ""))]]} /></ResearchInsightCard>;
+  const observations = stringList(data.observations);
+  return <ResearchInsightCard title="基本面评估" caption="基于已披露财务口径"><div className="research-score"><strong>{formatResearchNumber(data.score)}</strong><span>综合评分</span></div><ResearchMetricList metrics={[["最近披露", formatResearchDate(data.announced_on)], ["数据来源", displayText(String(data.source ?? ""))]]} />{observations.length > 0 && <ResearchBulletList title="已满足条件" items={observations} />}</ResearchInsightCard>;
+}
+
+function CapitalFlowResearchCard({ data, isFund }: { data: Record<string, unknown> | null; isFund: boolean }) {
+  if (!data) return <ResearchEmptyCard title={isFund ? "持仓与资产配置" : "资金流向"} />;
+  if (isFund) {
+    const allocation = recordList(data.asset_allocations)[0];
+    return <ResearchInsightCard title="持仓与资产配置" caption="公开披露的资产配置"><ResearchMetricList metrics={[["机构持有比例", formatResearchPercent(data.institutional_holding_percent)], ["披露持仓数量", `${recordList(data.holdings).length} 项`], ["股票配置", formatResearchPercent(allocation?.stock_percent)], ["债券配置", formatResearchPercent(allocation?.bond_percent)], ["现金配置", formatResearchPercent(allocation?.cash_percent)], ["数据来源", displayText(String(data.source ?? ""))]]} /></ResearchInsightCard>;
+  }
+  return <ResearchInsightCard title="资金流向" caption={formatResearchDate(data.trade_date)}><div className={`research-direction ${researchTone(data.direction)}`}><strong>{directionText(data.direction)}</strong><span>当日资金方向</span></div><ResearchMetricList metrics={[["净流入", formatCurrency(data.net_flow_cny)], ["大单净流入", formatCurrency(data.large_order_net_flow_cny)], ["机构方向", directionText(data.institutional_direction)], ["数据来源", displayText(String(data.source ?? ""))]]} /></ResearchInsightCard>;
+}
+
+function SentimentResearchCard({ data }: { data: Record<string, unknown> | null }) {
+  if (!data) return <ResearchEmptyCard title="新闻情绪" />;
+  const positiveTerms = stringList(data.positive_terms);
+  const negativeTerms = stringList(data.negative_terms);
+  return <ResearchInsightCard title="新闻情绪" caption="基于已获取资讯的文本统计"><div className={`research-direction ${researchTone(data.label)}`}><strong>{directionText(data.label)}</strong><span>情绪结论</span></div><ResearchMetricList metrics={[["情绪分数", formatResearchNumber(data.score)], ["已分析资讯", `${formatResearchNumber(data.articles)} 条`]]} />{(positiveTerms.length > 0 || negativeTerms.length > 0) && <div className="sentiment-terms">{positiveTerms.map((term) => <span className="tag positive" key={`positive-${term}`}>积极：{term}</span>)}{negativeTerms.map((term) => <span className="tag negative" key={`negative-${term}`}>消极：{term}</span>)}</div>}</ResearchInsightCard>;
+}
+
+function FactorResearchCard({ data }: { data: Record<string, unknown> | null }) {
+  if (!data) return <ResearchEmptyCard title="内置因子" />;
+  const factors = recordList(data.observations);
+  return <ResearchInsightCard title="10 个内置因子" caption="用于辅助判断，不构成交易指令" wide><div className="factor-summary"><span className="tag info">可用 {formatResearchNumber(data.available_count)} / {formatResearchNumber(data.total_count)}</span><span className="tag positive">有利 {formatResearchNumber(data.supportive_count)}</span><span className="tag negative">不利 {formatResearchNumber(data.adverse_count)}</span></div>{factors.length > 0 ? <div className="research-factor-list">{factors.map((factor, index) => <article key={`${String(factor.name ?? "factor")}-${index}`}><div><strong>{String(factor.name ?? "未命名因子")}</strong><small>{String(factor.theme ?? "")}</small></div><span className={`tag ${researchTone(factor.direction)}`}>{directionText(factor.direction)}</span><b>{formatFactorValue(factor.value, factor.unit)}</b><p>{String(factor.interpretation ?? factor.unavailable_reason ?? "暂无说明")}</p></article>)}</div> : <p className="muted">尚未获得可展示的因子结果。</p>}{stringList(data.notices).map((notice) => <p className="research-note" key={notice}>{notice}</p>)}</ResearchInsightCard>;
+}
+
 function FundWatchlistDetail({ data }: { data: Record<string, unknown> }) {
-  return <section className="fund-watchlist-detail"><div><p className="eyebrow">基金与 ETF 披露数据</p><h4>基金 / ETF 披露研究</h4><p className="muted">净值、持仓、资产配置、财务与资讯均以公开披露时间为准，不代表实时持仓或资金流。</p></div><div className="financial-section-grid"><DataCard title="基本资料与最新净值" data={asRecord(data.overview)} /><DataCard title="收益与回撤" data={{ returns_percent: data.returns_percent, drawdowns_percent: data.drawdowns_percent }} /><DataCard title="重仓持仓" data={{ holdings: data.holdings }} /><DataCard title="持仓与资产配置" data={{ asset_allocations: data.asset_allocations, institutional_holding_percent: data.institutional_holding_percent }} /><DataCard title="财务与诊断" data={{ latest_financials: data.latest_financials, diagnostics: data.diagnostics }} /><DataCard title="基金资讯列表" data={{ news: data.news }} /></div>{Array.isArray(data.limitations) && data.limitations.map((notice) => <div className="notice" key={String(notice)}>{String(notice)}</div>)}</section>;
+  const holdings = recordList(data.holdings);
+  const allocations = recordList(data.asset_allocations);
+  const latestAllocation = allocations[0];
+  const news = recordList(data.news);
+  return <section className="fund-watchlist-detail"><div><p className="eyebrow">基金与 ETF 披露数据</p><h4>基金 / ETF 披露研究</h4><p className="muted">净值、持仓、资产配置、财务与资讯均以公开披露时间为准，不代表实时持仓或资金流。</p></div><div className="fund-disclosure-grid"><ResearchInsightCard title="收益与回撤" caption="历史区间表现"><DisclosureMetrics data={asRecord(data.returns_percent)} empty="暂未获取区间收益数据" suffix="%" /><DisclosureMetrics data={asRecord(data.drawdowns_percent)} empty="暂未获取回撤数据" suffix="%" emphasis="最大回撤" /></ResearchInsightCard><ResearchInsightCard title="最新资产配置" caption={formatResearchDate(latestAllocation?.report_date)}><ResearchMetricList metrics={[["股票", formatResearchPercent(latestAllocation?.stock_percent)], ["债券", formatResearchPercent(latestAllocation?.bond_percent)], ["现金", formatResearchPercent(latestAllocation?.cash_percent)], ["其他资产", formatResearchPercent(latestAllocation?.other_percent)], ["机构持有", formatResearchPercent(data.institutional_holding_percent)]]} /></ResearchInsightCard><FundHoldingsCard holdings={holdings} /><FundNewsCard news={news} /><FundDisclosureCard title="基金财务与诊断" data={asRecord(data.latest_financials)} empty="暂无最新财务披露" /><FundDisclosureCard title="产品诊断" data={asRecord(data.diagnostics)} empty="暂无产品诊断数据" /></div>{stringList(data.limitations).map((notice) => <div className="notice" key={notice}>{notice}</div>)}</section>;
+}
+
+function ResearchInsightCard({ title, caption, children, wide = false }: { title: string; caption?: string; children: ReactNode; wide?: boolean }) {
+  return <article className={`research-insight-card${wide ? " wide" : ""}`}><div className="research-card-head"><div><h4>{title}</h4>{caption && <small>{caption}</small>}</div></div>{children}</article>;
+}
+
+function ResearchEmptyCard({ title }: { title: string }) {
+  return <ResearchInsightCard title={title}><p className="muted">暂未获取到可展示的数据；可稍后刷新研究解读。</p></ResearchInsightCard>;
+}
+
+function ResearchMetricList({ metrics }: { metrics: Array<[string, unknown]> }) {
+  return <dl className="research-metric-list">{metrics.filter(([, value]) => value !== undefined && value !== null && value !== "").map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{typeof value === "string" ? value : formatResearchValue(value)}</dd></div>)}</dl>;
+}
+
+function ResearchBulletList({ title, items }: { title: string; items: string[] }) {
+  return <section className="research-bullet-list"><h5>{title}</h5><ul>{items.map((item) => <li key={item}>{item}</li>)}</ul></section>;
+}
+
+function DisclosureMetrics({ data, empty, suffix, emphasis }: { data: Record<string, unknown> | null; empty: string; suffix: string; emphasis?: string }) {
+  if (!data || Object.keys(data).length === 0) return <p className="muted">{empty}</p>;
+  return <section className="disclosure-metrics"><h5>{emphasis ?? "区间收益"}</h5><ResearchMetricList metrics={Object.entries(data).map(([key, value]) => [researchFieldLabel(key), value === null || value === undefined ? "—" : `${formatResearchNumber(value)}${suffix}`])} /></section>;
+}
+
+function FundHoldingsCard({ holdings }: { holdings: Record<string, unknown>[] }) {
+  return <ResearchInsightCard title="重仓持仓" caption="最近一期公开披露" wide>{holdings.length === 0 ? <p className="muted">暂未获取重仓持仓披露。</p> : <div className="fund-holdings-list">{holdings.slice(0, 8).map((holding, index) => <article key={`${String(holding.name ?? "holding")}-${index}`}><strong>{String(holding.name ?? "未披露名称")}</strong><span>{displayText(String(holding.asset_type ?? ""))}</span><b>{formatResearchPercent(holding.weight_percent)}</b><small>{holding.disclosed_at ? `披露：${formatResearchDate(holding.disclosed_at)}` : "披露日期未提供"}</small></article>)}</div>}</ResearchInsightCard>;
+}
+
+function FundNewsCard({ news }: { news: Record<string, unknown>[] }) {
+  return <ResearchInsightCard title="基金资讯" caption="与标的相关的公开资讯" wide>{news.length === 0 ? <p className="muted">暂未获取基金资讯。</p> : <div className="fund-news-list">{news.slice(0, 4).map((item, index) => <article key={`${String(item.title ?? "news")}-${index}`}><div><strong>{String(item.title ?? "未命名资讯")}</strong>{typeof item.summary === "string" && item.summary.trim() && <p>{item.summary}</p>}</div><small>{[item.publisher ? String(item.publisher) : null, item.published_at ? formatResearchDate(item.published_at) : null].filter((value): value is string => Boolean(value)).join(" · ")}</small></article>)}</div>}</ResearchInsightCard>;
+}
+
+function FundDisclosureCard({ title, data, empty }: { title: string; data: Record<string, unknown> | null; empty: string }) {
+  if (!data || Object.keys(data).length === 0) return <ResearchInsightCard title={title}><p className="muted">{empty}</p></ResearchInsightCard>;
+  const metrics = Object.entries(data).filter(([, value]) => typeof value !== "object" || value === null).slice(0, 8).map(([key, value]) => [researchFieldLabel(key), formatResearchValue(value)] as [string, unknown]);
+  return <ResearchInsightCard title={title}><ResearchMetricList metrics={metrics} /></ResearchInsightCard>;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function recordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord).filter((item): item is Record<string, unknown> => item !== null) : [];
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
+}
+
+function formatResearchNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  const number = Number(value);
+  return Number.isFinite(number) ? new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number) : String(value);
+}
+
+function formatResearchValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "string") return displayText(value);
+  if (typeof value === "number") return formatResearchNumber(value);
+  if (typeof value === "boolean") return value ? "是" : "否";
+  return "已提供";
+}
+
+function formatResearchDate(value: unknown) {
+  if (!value) return "—";
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("zh-CN");
+}
+
+function formatResearchPercent(value: unknown) {
+  return value === null || value === undefined || value === "" ? "—" : `${formatResearchNumber(value)}%`;
+}
+
+function formatCurrency(value: unknown) {
+  return value === null || value === undefined || value === "" ? "—" : `${formatResearchNumber(value)} CNY`;
+}
+
+function formatFactorValue(value: unknown, unit: unknown) {
+  if (value === null || value === undefined || value === "") return "—";
+  const unitLabel = unit === "percent" ? "%" : unit === "ratio" ? " 倍" : unit === "CNY" ? " CNY" : "";
+  return `${formatResearchNumber(value)}${unitLabel}`;
+}
+
+function directionText(value: unknown) {
+  const labels: Record<string, string> = { inflow: "流入", outflow: "流出", supportive: "有利", adverse: "不利", unavailable: "暂缺", positive: "积极", negative: "消极", neutral: "中性" };
+  return labels[String(value ?? "")] ?? (value ? displayText(String(value)) : "—");
+}
+
+function researchTone(value: unknown) {
+  const positive = new Set(["inflow", "supportive", "positive", "bullish"]);
+  const negative = new Set(["outflow", "adverse", "negative", "bearish"]);
+  return positive.has(String(value)) ? "positive" : negative.has(String(value)) ? "negative" : "neutral";
+}
+
+function researchFieldLabel(key: string) {
+  const labels: Record<string, string> = { "1w": "近 1 周", "1m": "近 1 月", "3m": "近 3 月", "6m": "近 6 月", "1y": "近 1 年", ytd: "年初至今", since_inception: "成立以来", max_drawdown: "最大回撤", annualized_return: "年化收益", sharpe_ratio: "夏普比率", volatility: "波动率", expense_ratio: "费率", total_assets: "资产规模", net_assets: "净资产", report_date: "报告期" };
+  return labels[key] ?? dataFieldLabels[key] ?? key.replace(/_/g, " ");
 }
 
 function FinancialMetricCard({ title, caption, metrics }: { title: string; caption: string; metrics: Array<[string, string | null, string?]> }) {
