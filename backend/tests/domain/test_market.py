@@ -28,6 +28,23 @@ def test_instrument_canonicalizes_a_share_codes(raw_symbol: str, expected: str) 
     assert Instrument(raw_symbol, Market.A_SHARE).symbol == expected
 
 
+@pytest.mark.parametrize(
+    ("raw_symbol", "market", "instrument_type", "expected"),
+    [
+        ("159995", Market.A_SHARE, InstrumentType.ETF, "159995.SZ"),
+        ("510300", Market.A_SHARE, InstrumentType.ETF, "510300.SH"),
+        ("002010", Market.FUND, InstrumentType.FUND, "002010.OF"),
+    ],
+)
+def test_instrument_canonicalizes_explicit_fund_types_to_hithink_thscode(
+    raw_symbol: str,
+    market: Market,
+    instrument_type: InstrumentType,
+    expected: str,
+) -> None:
+    assert Instrument(raw_symbol, market, instrument_type).symbol == expected
+
+
 def test_quote_rejects_naive_timestamp() -> None:
     instrument = Instrument("AAPL", Market.UNITED_STATES)
 

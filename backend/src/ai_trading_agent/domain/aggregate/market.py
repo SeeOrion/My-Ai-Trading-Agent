@@ -24,7 +24,9 @@ class Instrument:
 
     def __post_init__(self) -> None:
         normalized_symbol = self.symbol.strip().upper()
-        normalized_symbol = _canonical_symbol(normalized_symbol, self.market)
+        normalized_symbol = _canonical_symbol(
+            normalized_symbol, self.market, self.instrument_type
+        )
         if not normalized_symbol:
             raise ValueError("symbol must not be empty")
         if any(character.isspace() for character in normalized_symbol):
@@ -80,10 +82,19 @@ def _default_currency(market: Market) -> str:
     }[market]
 
 
-def _canonical_symbol(symbol: str, market: Market) -> str:
-    """Accept a six-digit A-share input while retaining canonical venue codes."""
-    if market is not Market.A_SHARE or not (symbol.isdigit() and len(symbol) == 6):
+def _canonical_symbol(
+    symbol: str, market: Market, instrument_type: InstrumentType
+) -> str:
+    """Normalize explicit China-market fund types to documented Hithink thscodes."""
+    if not (symbol.isdigit() and len(symbol) == 6):
         return symbol
+    if market is Market.FUND and instrument_type is InstrumentType.FUND:
+        return f"{symbol}.OF"
+    if market is not Market.A_SHARE:
+        return symbol
+    if instrument_type is InstrumentType.ETF:
+        suffix = {"5": "SH", "1": "SZ"}.get(symbol[0])
+        return f"{symbol}.{suffix}" if suffix else symbol
     suffix = {
         "6": "SH",
         "5": "SH",
