@@ -42,7 +42,7 @@ def reconfigure_simulation_portfolio(
     *,
     initial_capital: Decimal,
     max_positions: int,
-    strategy_id: UUID | None,
+    strategy_ids: tuple[UUID, ...],
     open_position_count: int,
 ) -> AiSimulationPortfolio:
     """Update account settings without discarding audited paper-trading state.
@@ -72,7 +72,7 @@ def reconfigure_simulation_portfolio(
         initial_capital=initial_capital,
         cash_balance=updated_cash,
         max_positions=max_positions,
-        strategy_id=strategy_id,
+        strategy_ids=strategy_ids,
         status=portfolio.status,
     )
 

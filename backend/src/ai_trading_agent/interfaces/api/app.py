@@ -505,7 +505,7 @@ def create_app(
                         market=payload.market,
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
-                        strategy_id=payload.strategy_id,
+                        strategy_ids=tuple(payload.strategy_ids),
                     ),
                 )
             )
@@ -532,7 +532,7 @@ def create_app(
                         market=payload.market,
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
-                        strategy_id=payload.strategy_id,
+                        strategy_ids=tuple(payload.strategy_ids),
                     ),
                 )
             )

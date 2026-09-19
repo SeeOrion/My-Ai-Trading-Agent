@@ -63,8 +63,11 @@ class SqlAlchemyAiSimulationRepository:
             record.initial_capital = portfolio.initial_capital
             record.cash_balance = portfolio.cash_balance
             record.max_positions = portfolio.max_positions
+            record.strategy_ids = [str(strategy_id) for strategy_id in portfolio.strategy_ids]
+            # Retain the former nullable foreign key as a migration bridge for
+            # existing private databases; the ordered JSON list is authoritative.
             record.strategy_id = (
-                None if portfolio.strategy_id is None else str(portfolio.strategy_id)
+                None if not portfolio.strategy_ids else str(portfolio.strategy_ids[0])
             )
             record.status = portfolio.status
             await session.commit()
@@ -171,6 +174,9 @@ class SqlAlchemyAiSimulationRepository:
 
 
 def _portfolio(record: AiSimulationPortfolioRecord) -> AiSimulationPortfolio:
+    stored_strategy_ids = record.strategy_ids or (
+        [] if record.strategy_id is None else [record.strategy_id]
+    )
     return AiSimulationPortfolio(
         portfolio_id=UUID(record.portfolio_id),
         market=record.market,
@@ -178,7 +184,7 @@ def _portfolio(record: AiSimulationPortfolioRecord) -> AiSimulationPortfolio:
         initial_capital=Decimal(str(record.initial_capital)),
         cash_balance=Decimal(str(record.cash_balance)),
         max_positions=record.max_positions,
-        strategy_id=None if record.strategy_id is None else UUID(record.strategy_id),
+        strategy_ids=tuple(UUID(strategy_id) for strategy_id in stored_strategy_ids),
         status=record.status,
     )
 

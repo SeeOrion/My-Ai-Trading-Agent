@@ -99,6 +99,8 @@ def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
 
 
 def test_reconfigure_simulation_portfolio_preserves_positions_and_applies_capital_delta() -> None:
+    first_strategy_id = uuid4()
+    second_strategy_id = uuid4()
     portfolio = AiSimulationPortfolio(
         portfolio_id=uuid4(),
         market="a_share",
@@ -112,7 +114,7 @@ def test_reconfigure_simulation_portfolio_preserves_positions_and_applies_capita
         portfolio,
         initial_capital=Decimal("120000"),
         max_positions=4,
-        strategy_id=None,
+        strategy_ids=(first_strategy_id, second_strategy_id),
         open_position_count=1,
     )
 
@@ -120,6 +122,7 @@ def test_reconfigure_simulation_portfolio_preserves_positions_and_applies_capita
     assert updated.initial_capital == Decimal("120000")
     assert updated.cash_balance == Decimal("95000")
     assert updated.max_positions == 4
+    assert updated.strategy_ids == (first_strategy_id, second_strategy_id)
 
 
 def test_reconfigure_simulation_portfolio_rejects_conflicting_open_positions() -> None:
@@ -137,7 +140,7 @@ def test_reconfigure_simulation_portfolio_rejects_conflicting_open_positions() -
             portfolio,
             initial_capital=Decimal("20000"),
             max_positions=1,
-            strategy_id=None,
+            strategy_ids=(),
             open_position_count=2,
         )
     except ValueError as error:

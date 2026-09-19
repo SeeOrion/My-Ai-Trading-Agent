@@ -20,6 +20,7 @@ from ai_trading_agent.domain.aggregate.ai_simulation import (
     AiSimulationRun,
     AiSimulationTrade,
 )
+from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist import PaperPosition
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
@@ -30,7 +31,9 @@ from ai_trading_agent.domain.service.ai_simulation import (
     evaluate_simulated_entry,
     reconfigure_simulation_portfolio,
 )
+from ai_trading_agent.domain.service.discipline_entry import disciplined_entry_blockers
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
+from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview
@@ -46,7 +49,7 @@ class AiSimulationRunRequest:
     market: Market
     initial_capital: Decimal
     max_positions: int = 3
-    strategy_id: UUID | None = None
+    strategy_ids: tuple[UUID, ...] = ()
     trigger: str = "manual"
 
 
@@ -60,8 +63,8 @@ async def run_ai_simulation(
     """Run one bounded, deterministic AI paper-trading review for one market."""
     started_at = datetime.now(UTC)
     repository = ai_simulation_repository(app)
-    strategy = await _select_strategy(app, request.market, request.strategy_id)
-    _ensure_requested_strategy(request.strategy_id, strategy)
+    strategies = await _select_strategies(app, request.market, request.strategy_ids)
+    _ensure_requested_strategies(request.strategy_ids, strategies)
     portfolio = await repository.get_active(request.market)
     if portfolio is None:
         portfolio = AiSimulationPortfolio(
@@ -71,14 +74,14 @@ async def run_ai_simulation(
             initial_capital=request.initial_capital,
             cash_balance=request.initial_capital,
             max_positions=request.max_positions,
-            strategy_id=None if strategy is None else strategy.strategy_id,
+            strategy_ids=tuple(item.strategy_id for item in strategies),
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions: list[AiSimulationPosition] = []
     else:
         positions = await repository.list_open_positions(portfolio.portfolio_id)
         portfolio = await _save_reconfigured_portfolio(
-            repository, portfolio, positions, request, strategy
+            repository, portfolio, positions, request, strategies
         )
     screen, _ = await today_candidates(
         request.market, CandidateRanking.BALANCED_ENTRY, refresh=True
@@ -87,10 +90,15 @@ async def run_ai_simulation(
     notices: list[str] = [
         "AI 模拟组合仅在预设高流动性研究样本中筛选，不是全市场扫描，也不会发送真实订单。"
     ]
-    if strategy is None:
+    if not strategies:
         notices.append("未选择匹配的启用策略：使用内置因子与 25% 单标的风险预算。")
     else:
-        notices.append(f"本轮采用策略「{strategy.name}」，仅参考其已配置的因子与仓位上限。")
+        notices.append(
+            "本轮联合采用策略「"
+            f"{'」、「'.join(item.name for item in strategies)}」，"
+            "仅参考所选策略的因子，并按其中最严格的仓位上限分配。"
+        )
+    notices.append("个人纪律为硬性约束：仅当标的存在适用的启用纪律且满足买入条件时才允许模拟建仓。")
 
     decision_reports: list[AiSimulationDecisionReport] = []
 
@@ -115,16 +123,22 @@ async def run_ai_simulation(
             financial_snapshot=None,
             news_sentiment=None,
         )
-        simulated_candidate = _candidate_from_analysis(candidate, analysis, strategy)
+        simulated_candidate = _candidate_from_analysis(candidate, analysis, strategies)
         decision = evaluate_simulated_entry(
             simulated_candidate,
             available_cash=portfolio.cash_balance,
             initial_capital=portfolio.initial_capital,
             open_position_count=len(positions),
             max_positions=portfolio.max_positions,
-            max_position_percent=(strategy.max_position_pct if strategy else Decimal("25")),
+            max_position_percent=_max_position_percent(strategies),
             lot_size=Decimal("100") if request.market is Market.A_SHARE else Decimal("1"),
         )
+        discipline_blockers = await _discipline_entry_blockers(app, candidate)
+        if discipline_blockers:
+            decision = AiSimulationEntryDecision(
+                allocation=None,
+                blockers=tuple(dict.fromkeys((*discipline_blockers, *decision.blockers))),
+            )
         decision_reports.append(_decision_report(simulated_candidate, decision))
         allocation = decision.allocation
         if allocation is None:
@@ -160,7 +174,7 @@ async def run_ai_simulation(
             initial_capital=portfolio.initial_capital,
             cash_balance=portfolio.cash_balance - allocation.amount,
             max_positions=portfolio.max_positions,
-            strategy_id=portfolio.strategy_id,
+            strategy_ids=portfolio.strategy_ids,
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions.append(position)
@@ -221,10 +235,10 @@ async def update_ai_simulation_settings(
     portfolio = await repository.get_active(request.market)
     if portfolio is None:
         raise LookupError("尚未创建该市场的 AI 模拟组合")
-    strategy = await _select_strategy(app, request.market, request.strategy_id)
-    _ensure_requested_strategy(request.strategy_id, strategy)
+    strategies = await _select_strategies(app, request.market, request.strategy_ids)
+    _ensure_requested_strategies(request.strategy_ids, strategies)
     positions = await repository.list_open_positions(portfolio.portfolio_id)
-    await _save_reconfigured_portfolio(repository, portfolio, positions, request, strategy)
+    await _save_reconfigured_portfolio(repository, portfolio, positions, request, strategies)
     overview = await ai_simulation_overview(app, request.market)
     return AiSimulationOverview(
         portfolio=overview.portfolio,
@@ -267,7 +281,7 @@ async def run_scheduled_ai_simulations(
                     market=market,
                     initial_capital=portfolio.initial_capital,
                     max_positions=portfolio.max_positions,
-                    strategy_id=portfolio.strategy_id,
+                    strategy_ids=portfolio.strategy_ids,
                     trigger="scheduled",
                 ),
             )
@@ -350,31 +364,31 @@ async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOv
     )
 
 
-async def _select_strategy(
-    app: FastAPI, market: Market, strategy_id: UUID | None
-) -> StrategyProfile | None:
-    strategies = await ListStrategiesHandler(strategy_repository(app)).handle()
-    if strategy_id is None:
-        return None
-    return next(
-        (
-            item
-            for item in strategies
-            if (
-                item.strategy_id == strategy_id
-                and item.status == "active"
-                and market in item.markets
-            )
-        ),
-        None,
-    )
+async def _select_strategies(
+    app: FastAPI, market: Market, strategy_ids: tuple[UUID, ...]
+) -> tuple[StrategyProfile, ...]:
+    if not strategy_ids:
+        return ()
+    available = await ListStrategiesHandler(strategy_repository(app)).handle()
+    matching = {
+        item.strategy_id: item
+        for item in available
+        if item.status == "active" and market in item.markets
+    }
+    return tuple(matching[strategy_id] for strategy_id in strategy_ids if strategy_id in matching)
 
 
-def _ensure_requested_strategy(
-    strategy_id: UUID | None, strategy: StrategyProfile | None
+def _ensure_requested_strategies(
+    strategy_ids: tuple[UUID, ...], strategies: tuple[StrategyProfile, ...]
 ) -> None:
-    if strategy_id is not None and strategy is None:
+    if len(set(strategy_ids)) != len(strategy_ids):
+        raise ValueError("所选策略不能重复。")
+    if len(strategy_ids) != len(strategies):
         raise ValueError("所选策略不存在、未启用，或不适用于当前市场。")
+
+
+def _max_position_percent(strategies: tuple[StrategyProfile, ...]) -> Decimal:
+    return min((item.max_position_pct for item in strategies), default=Decimal("25"))
 
 
 async def _save_reconfigured_portfolio(
@@ -382,23 +396,23 @@ async def _save_reconfigured_portfolio(
     portfolio: AiSimulationPortfolio,
     positions: list[AiSimulationPosition],
     request: AiSimulationRunRequest,
-    strategy: StrategyProfile | None,
+    strategies: tuple[StrategyProfile, ...],
 ) -> AiSimulationPortfolio:
     updated = reconfigure_simulation_portfolio(
         portfolio,
         initial_capital=request.initial_capital,
         max_positions=request.max_positions,
-        strategy_id=None if strategy is None else strategy.strategy_id,
+        strategy_ids=tuple(item.strategy_id for item in strategies),
         open_position_count=len(positions),
     )
     return portfolio if updated == portfolio else await repository.save_portfolio(updated)
 
 
 def _candidate_from_analysis(
-    candidate, analysis: dict[str, object], strategy: StrategyProfile | None
+    candidate, analysis: dict[str, object], strategies: tuple[StrategyProfile, ...]
 ) -> AiSimulationCandidate:  # type: ignore[no-untyped-def]
     observations = tuple(analysis["observations"])
-    requested = set(strategy.factor_ids) if strategy is not None else None
+    requested = set().union(*(item.factor_ids for item in strategies)) if strategies else None
     relevant = tuple(
         item for item in observations if requested is None or item["identifier"] in requested
     )
@@ -419,6 +433,10 @@ def _candidate_from_analysis(
         for item in relevant
         if item["direction"] == "supportive"
     ) or tuple(candidate.reasons)
+    strategy_context = tuple(
+        _strategy_factor_context(strategy, observations)
+        for strategy in strategies
+    )
     return AiSimulationCandidate(
         symbol=candidate.observation.instrument.symbol,
         display_name=candidate.observation.name,
@@ -428,8 +446,31 @@ def _candidate_from_analysis(
         adverse_factor_count=adverse,
         available_factor_ids=available,
         unavailable_factor_ids=unavailable,
-        rationale=rationale,
+        rationale=tuple(dict.fromkeys((*strategy_context, *rationale))),
     )
+
+
+def _strategy_factor_context(strategy: StrategyProfile, observations: tuple[object, ...]) -> str:
+    relevant = [
+        item
+        for item in observations
+        if item["identifier"] in strategy.factor_ids  # type: ignore[index]
+    ]
+    supportive = sum(item["direction"] == "supportive" for item in relevant)  # type: ignore[index]
+    adverse = sum(item["direction"] == "adverse" for item in relevant)  # type: ignore[index]
+    return f"策略「{strategy.name}」：支持 {supportive} 项，逆风 {adverse} 项。"
+
+
+async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
+    observation = candidate.observation
+    quote = Quote(
+        instrument=observation.instrument,
+        last_price=observation.last_price,
+        observed_at=observation.observed_at,
+        source=observation.source,
+    )
+    decisions = await evaluate_active_disciplines(app, observation.instrument, quote)
+    return disciplined_entry_blockers(decisions)
 
 
 def _currency_for_market(market: Market) -> str:

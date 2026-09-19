@@ -651,7 +651,7 @@ class AiSimulationRunInput(BaseModel):
     market: Market
     initial_capital: Decimal = Field(gt=0)
     max_positions: int = Field(default=3, ge=1, le=10)
-    strategy_id: UUID | None = None
+    strategy_ids: list[UUID] = Field(default_factory=list, max_length=8)
 
 
 class AiSimulationPositionResponse(BaseModel):
@@ -746,7 +746,7 @@ class AiSimulationOverviewResponse(BaseModel):
     daily_pnl: Decimal | None
     month_to_date_pnl: Decimal | None
     max_positions: int
-    strategy_id: UUID | None
+    strategy_ids: list[UUID]
     observed_at: str
     positions: list[AiSimulationPositionResponse]
     notices: list[str]
@@ -768,7 +768,7 @@ class AiSimulationOverviewResponse(BaseModel):
             daily_pnl=overview.daily_pnl,
             month_to_date_pnl=overview.month_to_date_pnl,
             max_positions=portfolio.max_positions,
-            strategy_id=portfolio.strategy_id,
+            strategy_ids=list(portfolio.strategy_ids),
             observed_at=overview.observed_at.isoformat(),
             positions=[
                 AiSimulationPositionResponse(

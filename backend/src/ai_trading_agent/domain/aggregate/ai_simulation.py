@@ -20,7 +20,7 @@ class AiSimulationPortfolio:
     initial_capital: Decimal
     cash_balance: Decimal
     max_positions: int
-    strategy_id: UUID | None = None
+    strategy_ids: tuple[UUID, ...] = ()
     status: str = "active"
 
     def __post_init__(self) -> None:
@@ -30,6 +30,8 @@ class AiSimulationPortfolio:
             raise ValueError("max_positions must be between 1 and 10")
         if self.status not in {"active", "archived"}:
             raise ValueError("invalid simulation portfolio status")
+        if len(set(self.strategy_ids)) != len(self.strategy_ids):
+            raise ValueError("simulation strategy_ids must not contain duplicates")
         object.__setattr__(self, "market", self.market.strip())
         object.__setattr__(self, "currency", self.currency.strip().upper())
 
