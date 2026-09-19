@@ -75,3 +75,21 @@ header { gap: 16px; margin-bottom: 18px; } h1 { margin-bottom: 5px; font-size: c
 /* Chinese market convention: red denotes a rise and green denotes a fall. */
 .rotation-list.up { border-top-color: #ef4444; }
 .rotation-list.down { border-top-color: #16a34a; }
+
+/* Desktop navigation stays available while the research workspace scrolls. */
+@media (min-width: 861px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: 216px;
+    height: 100vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    z-index: 10;
+  }
+
+  .content {
+    grid-column: 2;
+    min-width: 0;
+  }
+}
