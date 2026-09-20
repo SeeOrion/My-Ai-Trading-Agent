@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from decimal import Decimal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
@@ -265,14 +266,21 @@ async def ai_simulation_runs(
 
 
 async def run_scheduled_ai_simulations(
-    app: FastAPI, *, weekdays_only: bool = True
+    app: FastAPI,
+    *,
+    weekdays_only: bool = True,
+    market_hours_only: bool = True,
+    observed_at: datetime | None = None,
 ) -> None:
-    """Run existing private AI accounts sequentially and persist every outcome."""
-    if weekdays_only and not _is_weekday(datetime.now()):
+    """Run existing accounts only in each market's weekday trading sessions."""
+    run_at = observed_at or datetime.now(UTC)
+    if weekdays_only and not _is_weekday(run_at):
         return
     repository = ai_simulation_repository(app)
     for portfolio in await repository.list_active():
         market = Market(portfolio.market)
+        if market_hours_only and not _is_market_open(market, run_at):
+            continue
         started_at = datetime.now(UTC)
         try:
             await run_ai_simulation(
@@ -310,6 +318,27 @@ async def run_scheduled_ai_simulations(
 def _is_weekday(observed_at: datetime) -> bool:
     """Use the server's local calendar so the daily job stays quiet on weekends."""
     return observed_at.weekday() < 5
+
+
+def _is_market_open(market: Market, observed_at: datetime) -> bool:
+    """Check regular sessions in the market's local timezone, including US DST."""
+    timezone, sessions = {
+        Market.A_SHARE: (
+            "Asia/Shanghai",
+            ((time(9, 30), time(11, 30)), (time(13, 0), time(15, 0))),
+        ),
+        Market.HONG_KONG: (
+            "Asia/Hong_Kong",
+            ((time(9, 30), time(12, 0)), (time(13, 0), time(16, 0))),
+        ),
+        Market.UNITED_STATES: ("America/New_York", ((time(9, 30), time(16, 0)),)),
+    }.get(market, ("UTC", ()))
+    instant = observed_at if observed_at.tzinfo is not None else observed_at.replace(tzinfo=UTC)
+    local_now = instant.astimezone(ZoneInfo(timezone))
+    if not _is_weekday(local_now):
+        return False
+    local_time = local_now.time().replace(tzinfo=None)
+    return any(start <= local_time < end for start, end in sessions)
 
 
 async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:

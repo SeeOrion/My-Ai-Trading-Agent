@@ -1,15 +1,16 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import uuid4
 
 from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationPortfolio
+from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.domain.service.ai_simulation import (
     AiSimulationCandidate,
     choose_simulated_entry,
     evaluate_simulated_entry,
     reconfigure_simulation_portfolio,
 )
-from ai_trading_agent.interfaces.facade.ai_simulation import _is_weekday
+from ai_trading_agent.interfaces.facade.ai_simulation import _is_market_open, _is_weekday
 
 
 def _candidate(
@@ -152,3 +153,12 @@ def test_reconfigure_simulation_portfolio_rejects_conflicting_open_positions() -
 def test_ai_simulation_scheduler_skips_weekends_by_local_calendar() -> None:
     assert _is_weekday(datetime(2026, 9, 18, 9, 0))
     assert not _is_weekday(datetime(2026, 9, 19, 9, 0))
+
+
+def test_ai_simulation_scheduler_runs_only_in_each_market_regular_session() -> None:
+    assert _is_market_open(Market.A_SHARE, datetime(2026, 9, 18, 1, 30, tzinfo=UTC))
+    assert not _is_market_open(Market.A_SHARE, datetime(2026, 9, 18, 3, 30, tzinfo=UTC))
+    assert _is_market_open(Market.A_SHARE, datetime(2026, 9, 18, 5, 0, tzinfo=UTC))
+    assert _is_market_open(Market.HONG_KONG, datetime(2026, 9, 18, 1, 30, tzinfo=UTC))
+    assert _is_market_open(Market.UNITED_STATES, datetime(2026, 9, 18, 13, 30, tzinfo=UTC))
+    assert not _is_market_open(Market.UNITED_STATES, datetime(2026, 9, 18, 20, 0, tzinfo=UTC))

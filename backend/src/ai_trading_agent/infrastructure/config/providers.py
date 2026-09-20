@@ -194,11 +194,12 @@ class WatchlistAnalysisSettings:
 
 @dataclass(frozen=True, slots=True)
 class AiSimulationSchedulerSettings:
-    """Daily cadence for existing AI paper-trading accounts only."""
+    """Intraday cadence for existing AI paper-trading accounts only."""
 
     scheduler_enabled: bool = True
-    interval_seconds: int = 86_400
+    interval_seconds: int = 600
     weekdays_only: bool = True
+    market_hours_only: bool = True
 
     @classmethod
     def from_environment(cls) -> AiSimulationSchedulerSettings:
@@ -214,15 +215,23 @@ class AiSimulationSchedulerSettings:
         ).strip().lower()
         if raw_weekdays_only not in {"true", "false"}:
             raise ProviderConfigurationError("AI_SIMULATION_WEEKDAYS_ONLY must be true or false")
+        raw_market_hours_only = os.environ.get(
+            "AI_SIMULATION_MARKET_HOURS_ONLY", "true"
+        ).strip().lower()
+        if raw_market_hours_only not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "AI_SIMULATION_MARKET_HOURS_ONLY must be true or false"
+            )
         return cls(
             scheduler_enabled=raw_enabled == "true",
             interval_seconds=_bounded_int(
-                os.environ.get("AI_SIMULATION_INTERVAL_SECONDS", "86400").strip(),
+                os.environ.get("AI_SIMULATION_INTERVAL_SECONDS", "600").strip(),
                 "AI_SIMULATION_INTERVAL_SECONDS",
-                minimum=300,
+                minimum=600,
                 maximum=604_800,
             ),
             weekdays_only=raw_weekdays_only == "true",
+            market_hours_only=raw_market_hours_only == "true",
         )
 
 

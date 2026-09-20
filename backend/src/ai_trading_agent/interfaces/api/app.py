@@ -142,10 +142,13 @@ def create_app(
         if enable_scheduled_tasks and ai_settings.scheduler_enabled:
             scheduler = RecurringTaskScheduler(
                 lambda: run_scheduled_ai_simulations(
-                    application, weekdays_only=ai_settings.weekdays_only
+                    application,
+                    weekdays_only=ai_settings.weekdays_only,
+                    market_hours_only=ai_settings.market_hours_only,
                 ),
                 ai_settings.interval_seconds,
                 run_immediately=False,
+                align_to_interval_boundary=True,
             )
             scheduler.start()
             application.state.ai_simulation_scheduler = scheduler

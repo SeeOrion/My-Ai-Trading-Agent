@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Awaitable, Callable
 
 
@@ -15,10 +16,12 @@ class RecurringTaskScheduler:
         interval_seconds: int,
         *,
         run_immediately: bool = True,
+        align_to_interval_boundary: bool = False,
     ) -> None:
         self._callback = callback
         self._interval_seconds = interval_seconds
         self._run_immediately = run_immediately
+        self._align_to_interval_boundary = align_to_interval_boundary
         self._stop_requested = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
 
@@ -35,7 +38,7 @@ class RecurringTaskScheduler:
         if not self._run_immediately:
             try:
                 await asyncio.wait_for(
-                    self._stop_requested.wait(), timeout=self._interval_seconds
+                    self._stop_requested.wait(), timeout=self._first_wait_seconds()
                 )
             except TimeoutError:
                 pass
@@ -52,6 +55,14 @@ class RecurringTaskScheduler:
                 )
             except TimeoutError:
                 continue
+
+    def _first_wait_seconds(self) -> float:
+        """Align periodic production jobs to a wall-clock interval when requested."""
+        if not self._align_to_interval_boundary:
+            return self._interval_seconds
+        remainder = time.time() % self._interval_seconds
+        delay = self._interval_seconds - remainder
+        return self._interval_seconds if delay < 0.01 else delay
 
 
 # Compatibility name for deployments that imported the first scheduler directly.
