@@ -1,5 +1,11 @@
 # My AI Trading Agent Backend
 
+## macOS 常驻本机服务
+
+本项目在 macOS 上使用 `launchd` 保持后端常驻，而不是依赖临时终端。服务在登录后自动启动，意外退出会自动重启；AI 模拟任务本身仍只会在工作日各市场常规开市时段每 10 分钟运行。
+
+已提交的模板为 `deploy/macos/com.seeorion.my-ai-trading-agent.backend.plist`。模板中的路径对应当前这台 Mac；如将项目移动到其他位置，先更新三个项目绝对路径后再安装。运行日志保存于 `/private/tmp/my-ai-trading-agent-backend.log` 与 `/private/tmp/my-ai-trading-agent-backend-error.log`，不写入仓库。
+
 This directory is the complete Python backend workspace: DDD source, tests, Alembic migrations,
 `uv` dependency definition and Docker image.
 

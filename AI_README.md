@@ -302,6 +302,8 @@ Tushare 日线（明确标记为日终/非实时）
 | 全市场扫描 | 默认关闭 | `MARKET_SCAN_*` | 仅手动或显式开启；批次上限 400 |
 | 扫描快照清理 | 与扫描流程关联 | 代码中的保留策略 | `market_snapshots` 只保留 7 天 |
 
+本机 macOS 开发环境使用 `backend/deploy/macos/com.seeorion.my-ai-trading-agent.backend.plist` 安装 `launchd` 用户服务，令 FastAPI 在登录后持续运行并在异常退出后自动重启。服务是否常驻与模拟任务是否执行是两回事：后者仍由 `AI_SIMULATION_*` 和交易时段门控严格限制。
+
 调试时，如果页面数据未变，先确认：后端进程是否是最新代码、对应 scheduler 是否开启、数据库连接是否有效、分析快照是否还在缓存窗口内。手动“更新解读”可强制刷新一只自选标的。
 
 ## 11. PostgreSQL 与迁移
