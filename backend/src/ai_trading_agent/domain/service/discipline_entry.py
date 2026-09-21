@@ -7,13 +7,9 @@ from ai_trading_agent.domain.enums.research import DisciplineDecisionStatus
 
 
 def disciplined_entry_blockers(decisions: Sequence[DisciplineDecision]) -> tuple[str, ...]:
-    """Allow a new simulated entry only when every applicable plan says buy.
-
-    No matching active plan is deliberately a blocker: autonomous simulation
-    must not invent an entry outside the user's explicit price discipline.
-    """
+    """Apply declared disciplines as hard constraints only when they exist."""
     if not decisions:
-        return ("未配置该标的的启用个人纪律；严格纪律模式不允许新建模拟仓位。",)
+        return ()
     return tuple(
         f"个人纪律「{item.discipline.name}」当前为{item.status.value}，未满足买入条件，不允许新建模拟仓位。"
         for item in decisions

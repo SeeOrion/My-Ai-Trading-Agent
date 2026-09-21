@@ -99,7 +99,10 @@ async def run_ai_simulation(
             f"{'」、「'.join(item.name for item in strategies)}」，"
             "仅参考所选策略的因子，并按其中最严格的仓位上限分配。"
         )
-    notices.append("个人纪律为硬性约束：仅当标的存在适用的启用纪律且满足买入条件时才允许模拟建仓。")
+    notices.append(
+        "个人纪律为可选硬性约束：未配置适用纪律时按因子、策略和风险预算判断；"
+        "配置并启用后，必须满足纪律买入条件才允许模拟建仓。"
+    )
 
     decision_reports: list[AiSimulationDecisionReport] = []
 

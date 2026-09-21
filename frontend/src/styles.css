@@ -145,3 +145,8 @@ header { gap: 16px; margin-bottom: 18px; } h1 { margin-bottom: 5px; font-size: c
   .fund-news-list article { display: grid; gap: 5px; }
   .fund-news-list small { text-align: left; }
 }
+
+.ai-discipline-control { display: grid; gap: 8px; min-width: 0; margin: 0; padding: 8px 10px; border: 1px solid #cfd9e7; border-radius: 7px; }
+.ai-discipline-control legend { padding: 0 3px; color: #526178; font-size: 13px; }
+.ai-discipline-control small { color: #718096; font-size: 11px; line-height: 1.5; }
+.ai-discipline-control .secondary { justify-self: start; }

@@ -30,7 +30,7 @@ def _decision(price: str):
     )
 
 
-def test_strict_discipline_entry_requires_an_applicable_buy_signal() -> None:
-    assert disciplined_entry_blockers([])
+def test_declared_discipline_requires_an_applicable_buy_signal() -> None:
+    assert disciplined_entry_blockers([]) == ()
     assert disciplined_entry_blockers([_decision("15")]) == ()
     assert "未满足买入条件" in disciplined_entry_blockers([_decision("16")])[0]
