@@ -15,7 +15,11 @@ from ai_trading_agent.infrastructure.config.providers import (
     HithinkFinanceSettings,
     TushareSettings,
 )
-from ai_trading_agent.infrastructure.rpc.futu_market import FutuSymbolMapper
+from ai_trading_agent.infrastructure.rpc.futu_market import (
+    FutuProviderError,
+    FutuSymbolMapper,
+    ensure_futu_gateway_is_reachable,
+)
 from ai_trading_agent.infrastructure.rpc.hithink_client import (
     HithinkFinanceRestClient,
     HithinkFinanceServiceError,
@@ -104,6 +108,10 @@ class FutuHistoricalBarsProvider:
         return await asyncio.to_thread(self._get_daily_bars_sync, instrument, limit)
 
     def _get_daily_bars_sync(self, instrument: Instrument, limit: int) -> tuple[PriceBar, ...]:
+        try:
+            ensure_futu_gateway_is_reachable(self._settings)
+        except FutuProviderError as error:
+            raise HistoricalBarsProviderError(str(error)) from error
         try:
             from futu import RET_OK, KLType, OpenQuoteContext
         except ImportError as error:  # pragma: no cover

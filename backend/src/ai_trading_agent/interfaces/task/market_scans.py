@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
+
+
+_logger = logging.getLogger(__name__)
 
 
 class RecurringTaskScheduler:
@@ -46,9 +50,9 @@ class RecurringTaskScheduler:
             try:
                 await self._callback()
             except Exception:
-                # Individual failed runs are persisted by the use case. A database
-                # outage should not terminate the scheduler forever.
-                pass
+                # Individual failed runs are persisted by the use case. Keep the
+                # traceback in the service log if setup fails before persistence.
+                _logger.exception("Recurring task callback failed; next cycle will continue")
             try:
                 await asyncio.wait_for(
                     self._stop_requested.wait(), timeout=self._interval_seconds

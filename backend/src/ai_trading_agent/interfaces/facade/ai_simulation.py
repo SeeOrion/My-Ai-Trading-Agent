@@ -273,10 +273,13 @@ async def run_scheduled_ai_simulations(
     *,
     weekdays_only: bool = True,
     market_hours_only: bool = True,
+    run_timeout_seconds: int = 480,
     observed_at: datetime | None = None,
 ) -> None:
     """Run existing accounts only in each market's weekday trading sessions."""
     run_at = observed_at or datetime.now(UTC)
+    if run_timeout_seconds <= 0:
+        raise ValueError("run_timeout_seconds must be positive")
     if weekdays_only and not _is_weekday(run_at):
         return
     repository = ai_simulation_repository(app)
@@ -286,36 +289,60 @@ async def run_scheduled_ai_simulations(
             continue
         started_at = datetime.now(UTC)
         try:
-            await run_ai_simulation(
-                app,
-                AiSimulationRunRequest(
-                    market=market,
-                    initial_capital=portfolio.initial_capital,
-                    max_positions=portfolio.max_positions,
-                    strategy_ids=portfolio.strategy_ids,
-                    trigger="scheduled",
+            await asyncio.wait_for(
+                run_ai_simulation(
+                    app,
+                    AiSimulationRunRequest(
+                        market=market,
+                        initial_capital=portfolio.initial_capital,
+                        max_positions=portfolio.max_positions,
+                        strategy_ids=portfolio.strategy_ids,
+                        trigger="scheduled",
+                    ),
                 ),
+                timeout=run_timeout_seconds,
+            )
+        except TimeoutError:
+            await _save_failed_scheduled_run(
+                repository,
+                portfolio,
+                market,
+                started_at,
+                f"模拟任务在 {run_timeout_seconds} 秒内未完成，已停止本轮并等待下一次定时任务。",
             )
         except Exception as error:
-            try:
-                position_count = len(await repository.list_open_positions(portfolio.portfolio_id))
-                await repository.save_run(
-                    AiSimulationRun(
-                        run_id=uuid4(),
-                        portfolio_id=portfolio.portfolio_id,
-                        market=market,
-                        trigger="scheduled",
-                        status="failed",
-                        started_at=started_at,
-                        completed_at=datetime.now(UTC),
-                        position_count=position_count,
-                        total_equity=None,
-                        error_message=str(error)[:1_000],
-                    )
-                )
-            except Exception:
-                # A database outage must not prevent the next account or next day from running.
-                continue
+            await _save_failed_scheduled_run(
+                repository, portfolio, market, started_at, str(error)[:1_000]
+            )
+
+
+async def _save_failed_scheduled_run(
+    repository: SqlAlchemyAiSimulationRepository,
+    portfolio: AiSimulationPortfolio,
+    market: Market,
+    started_at: datetime,
+    error_message: str,
+) -> None:
+    """Persist an auditable failure without blocking the next account's schedule."""
+    try:
+        position_count = len(await repository.list_open_positions(portfolio.portfolio_id))
+        await repository.save_run(
+            AiSimulationRun(
+                run_id=uuid4(),
+                portfolio_id=portfolio.portfolio_id,
+                market=market,
+                trigger="scheduled",
+                status="failed",
+                started_at=started_at,
+                completed_at=datetime.now(UTC),
+                position_count=position_count,
+                total_equity=None,
+                error_message=error_message,
+            )
+        )
+    except Exception:
+        # A database outage must not prevent the next account or next day from running.
+        return
 
 
 def _is_weekday(observed_at: datetime) -> bool:

@@ -198,6 +198,7 @@ class AiSimulationSchedulerSettings:
 
     scheduler_enabled: bool = True
     interval_seconds: int = 600
+    run_timeout_seconds: int = 480
     weekdays_only: bool = True
     market_hours_only: bool = True
 
@@ -229,6 +230,12 @@ class AiSimulationSchedulerSettings:
                 "AI_SIMULATION_INTERVAL_SECONDS",
                 minimum=600,
                 maximum=604_800,
+            ),
+            run_timeout_seconds=_bounded_int(
+                os.environ.get("AI_SIMULATION_RUN_TIMEOUT_SECONDS", "480").strip(),
+                "AI_SIMULATION_RUN_TIMEOUT_SECONDS",
+                minimum=30,
+                maximum=540,
             ),
             weekdays_only=raw_weekdays_only == "true",
             market_hours_only=raw_market_hours_only == "true",

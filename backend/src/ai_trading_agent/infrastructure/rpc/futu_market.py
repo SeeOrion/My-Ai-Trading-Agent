@@ -83,17 +83,21 @@ class FutuMarketDataProvider:
             context.close()
 
     def _ensure_gateway_is_reachable(self) -> None:
-        try:
-            with socket.create_connection(
-                (self._settings.host, self._settings.port),
-                timeout=self._settings.connect_timeout_seconds,
-            ):
-                return
-        except OSError as error:
-            raise FutuProviderError(
-                "OpenD is unreachable at "
-                f"{self._settings.host}:{self._settings.port}; start OpenD or check its address"
-            ) from error
+        ensure_futu_gateway_is_reachable(self._settings)
+
+
+def ensure_futu_gateway_is_reachable(settings: FutuSettings) -> None:
+    """Fail fast before the synchronous Futu SDK can start its own reconnect loop."""
+    try:
+        with socket.create_connection(
+            (settings.host, settings.port), timeout=settings.connect_timeout_seconds
+        ):
+            return
+    except OSError as error:
+        raise FutuProviderError(
+            "OpenD is unreachable at "
+            f"{settings.host}:{settings.port}; start OpenD or check its address"
+        ) from error
 
     @staticmethod
     def _to_quote(instrument: Instrument, row: object) -> Quote:

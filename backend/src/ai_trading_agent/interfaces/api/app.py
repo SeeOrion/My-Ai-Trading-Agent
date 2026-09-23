@@ -145,6 +145,7 @@ def create_app(
                     application,
                     weekdays_only=ai_settings.weekdays_only,
                     market_hours_only=ai_settings.market_hours_only,
+                    run_timeout_seconds=ai_settings.run_timeout_seconds,
                 ),
                 ai_settings.interval_seconds,
                 run_immediately=False,
