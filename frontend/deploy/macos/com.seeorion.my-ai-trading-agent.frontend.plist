@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.seeorion.my-ai-trading-agent.frontend</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/node</string>
+    <string>/Users/xinyan/Documents/DesktopOrganizer/文件夹 1/Study/Ai-Traiding/AI-Trading-Agent/frontend/node_modules/vite/bin/vite.js</string>
+    <string>preview</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>5173</string>
+    <string>--strictPort</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/xinyan/Documents/DesktopOrganizer/文件夹 1/Study/Ai-Traiding/AI-Trading-Agent/frontend</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>5</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>/private/tmp/my-ai-trading-agent-frontend.log</string>
+  <key>StandardErrorPath</key>
+  <string>/private/tmp/my-ai-trading-agent-frontend-error.log</string>
+</dict>
+</plist>
