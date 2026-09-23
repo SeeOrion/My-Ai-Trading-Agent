@@ -42,15 +42,31 @@ class HithinkFinanceSettings:
 
 
 def _read_hithink_user_credential() -> str:
-    path = Path.home() / "Library/Application Support/hithink-finance/credentials.env"
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            name, separator, value = line.partition("=")
-            if separator and name.strip() == "HITHINK_FINANCE_API_KEY":
-                return value.strip()
-    except OSError:
-        return ""
+    for path in _hithink_credential_paths():
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                name, separator, value = line.partition("=")
+                if separator and name.strip() == "HITHINK_FINANCE_API_KEY":
+                    return value.strip()
+        except OSError:
+            continue
     return ""
+
+
+def _hithink_credential_paths() -> tuple[Path, ...]:
+    """Return private host/container credential locations without exposing values."""
+    explicit = os.environ.get("HITHINK_FINANCE_CREDENTIALS_FILE", "").strip()
+    candidates = [
+        Path.home() / "Library/Application Support/hithink-finance/credentials.env",
+        Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+        / "hithink-finance/credentials.env",
+    ]
+    app_data = os.environ.get("APPDATA", "").strip()
+    if app_data:
+        candidates.append(Path(app_data) / "hithink-finance/credentials.env")
+    if explicit:
+        candidates.insert(0, Path(explicit).expanduser())
+    return tuple(dict.fromkeys(candidates))
 
 
 @dataclass(frozen=True, slots=True)

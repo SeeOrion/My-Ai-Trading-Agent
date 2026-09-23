@@ -67,8 +67,9 @@ Browser ──HTTPS──> Nginx / React ──same-origin──> FastAPI ──
 ```
 
 `docker-compose.yml` 使这些服务可独立替换或扩展。数据库仅暴露在 Docker 私网；默认只将 Web UI
-绑定到 `127.0.0.1:8080`，生产服务器应再由已配置 TLS 的反向代理公开访问。迁移服务使用部署时提供的
-`DATABASE_URL`。本地后端可从用户维护的 `.env` 装载数据供应商和 LLM 设置，但这些值从不经 API 返回给浏览器。
+绑定到 `127.0.0.1:8090`（可用 `FRONTEND_PORT` 覆盖），生产服务器应再由已配置 TLS 的反向代理公开访问。
+`credential-init` 首次启动时生成数据库密码并保存到私有命名卷，迁移与后端只读使用。后端从用户维护的
+`.env` 装载数据供应商和 LLM 设置，但这些值从不经 API 返回给浏览器。
 
 ## 当前研究能力
 

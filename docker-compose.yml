@@ -1,29 +1,41 @@
 services:
+  credential-init:
+    image: alpine:3.22
+    command:
+      - sh
+      - -c
+      - >-
+        if [ ! -s /run/private/postgres_password ]; then
+          umask 077;
+          od -An -N32 -tx1 /dev/urandom | tr -d ' \n' > /run/private/postgres_password;
+        fi
+    volumes:
+      - postgres_credentials:/run/private
+    restart: "no"
+
   postgres:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: trading_agent
       POSTGRES_USER: trading_agent
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in deployment environment}
+      POSTGRES_PASSWORD_FILE: /run/private/postgres_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - postgres_credentials:/run/private:ro
+    depends_on:
+      credential-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trading_agent -d trading_agent"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql+asyncpg://trading_agent:${POSTGRES_PASSWORD:?set in deployment environment}@postgres:5432/trading_agent
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   migrate:
     build:
@@ -31,21 +43,67 @@ services:
       dockerfile: Dockerfile
     command: ["sh", "-c", "alembic -x database_url=\"$$DATABASE_URL\" upgrade head"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://trading_agent:${POSTGRES_PASSWORD:?set in deployment environment}@postgres:5432/trading_agent
+      DATABASE_PASSWORD_FILE: /run/private/postgres_password
+    volumes:
+      - postgres_credentials:/run/private:ro
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_PASSWORD_FILE: /run/private/postgres_password
+      FUTU_OPEND_HOST: ${DOCKER_FUTU_OPEND_HOST:-host.docker.internal}
+    volumes:
+      - postgres_credentials:/run/private:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${FRONTEND_PORT:-8090}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
+  postgres_credentials:

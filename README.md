@@ -45,8 +45,25 @@ cd frontend
 npm run dev
 ```
 
-`docker-compose.yml` 为未来私人服务器准备了 PostgreSQL、迁移、后端和静态前端四个独立服务。
-部署时在宿主机的秘密管理或私有环境变量中设置 `POSTGRES_PASSWORD`；不应把它写入仓库或前端构建变量。
+`docker-compose.yml` 提供凭据初始化、PostgreSQL、一次性数据库迁移、后端和静态前端五个独立服务。
+后端从仓库根目录私有 `.env` 读取 Tushare、LLM 和定时任务设置；Compose 会用容器内连接串覆盖
+`DATABASE_URL`。首次启动时，`credential-init` 会自动生成数据库密码并只保存在
+`postgres_credentials` 私有 Docker 卷中；密码不会进入项目 `.env`、镜像、Git 或前端。
+
+本机 Docker 部署（包含同花顺系统级私密凭据的只读挂载）：
+
+```bash
+HITHINK_CREDENTIALS_FILE="/Users/你的用户名/Library/Application Support/hithink-finance/credentials.env" \
+docker compose -f docker-compose.yml -f docker-compose.hithink.yml up -d --build
+
+docker compose -f docker-compose.yml -f docker-compose.hithink.yml ps
+```
+
+部署完成后访问 `http://127.0.0.1:8090`。如需其他端口，可在启动命令前设置 `FRONTEND_PORT`。
+`credential-init` 和 `migrate` 成功退出是正常状态；
+`postgres`、`backend`、`frontend` 应保持 `healthy`。Futu OpenD 继续运行在 Mac 宿主机，容器通过
+`host.docker.internal:11111` 访问。停止服务使用相同的两个 `-f` 参数执行 `docker compose down`；
+不要追加 `-v`，否则会删除 PostgreSQL 数据卷。
 
 本机 macOS 开发环境已准备两项 `launchd` 用户服务：后端服务和生产构建后的前端预览服务均会在登录后自动启动、异常退出后自动重启。前端固定提供于 `http://127.0.0.1:5173`，并将 `/api` 请求代理到本机后端。前端源码改动后，先执行 `cd frontend && npm run build`，再重启前端服务以加载新页面。
 

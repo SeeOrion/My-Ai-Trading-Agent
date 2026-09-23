@@ -1,10 +1,13 @@
+from pathlib import Path
+
 import pytest
 
 from ai_trading_agent.infrastructure.config.providers import (
-    AShareQuoteFailoverSettings,
     AiSimulationSchedulerSettings,
+    AShareQuoteFailoverSettings,
     ClosingPlanSchedulerSettings,
     FutuSettings,
+    HithinkFinanceSettings,
     ProviderConfigurationError,
     TushareSettings,
 )
@@ -22,6 +25,19 @@ def test_futu_settings_read_environment(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("FUTU_OPEND_PORT", "22222")
 
     assert FutuSettings.from_environment() == FutuSettings(host="opend.local", port=22222)
+
+
+def test_hithink_settings_read_explicit_private_credential_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    credential = tmp_path / "credentials.env"
+    credential.write_text("HITHINK_FINANCE_API_KEY=test-private-key\n", encoding="utf-8")
+    monkeypatch.delenv("HITHINK_FINANCE_API_KEY", raising=False)
+    monkeypatch.setenv("HITHINK_FINANCE_CREDENTIALS_FILE", str(credential))
+
+    settings = HithinkFinanceSettings.from_environment()
+
+    assert settings.api_key == "test-private-key"
 
 
 def test_a_share_failover_settings_read_environment(monkeypatch: pytest.MonkeyPatch) -> None:

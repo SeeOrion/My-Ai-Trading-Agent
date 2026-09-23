@@ -1,0 +1,9 @@
+services:
+  backend:
+    environment:
+      HITHINK_FINANCE_CREDENTIALS_FILE: /run/secrets/hithink-finance/credentials.env
+    volumes:
+      - type: bind
+        source: ${HITHINK_CREDENTIALS_FILE:?set to the external hithink credentials.env path}
+        target: /run/secrets/hithink-finance/credentials.env
+        read_only: true

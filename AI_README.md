@@ -71,15 +71,17 @@ npm run build
 
 ### 私有部署
 
-[`docker-compose.yml`](docker-compose.yml) 包含四项独立服务：
+[`docker-compose.yml`](docker-compose.yml) 包含五项独立服务：
 
 ```text
 Browser ── HTTPS / reverse proxy ── React/Nginx ── FastAPI ── PostgreSQL
                                                 └── 外部行情、资讯、LLM 服务
 ```
 
-- Docker 只把前端绑定为 `127.0.0.1:8080`；公网暴露应由宿主机反向代理和 TLS 负责。
-- `postgres`、`migrate`、`backend` 共用部署时注入的 `POSTGRES_PASSWORD`，不可写入 Git。
+- Docker 默认只把前端绑定为 `127.0.0.1:8090`（可用 `FRONTEND_PORT` 覆盖）；公网暴露应由宿主机反向代理和 TLS 负责。
+- `credential-init` 在首次启动时把随机 PostgreSQL 密码写入 `postgres_credentials` 命名卷；`postgres`、`migrate`、`backend` 只通过只读文件使用，不把密码写入 Git 或项目 `.env`。
+- 本机完整部署叠加 `docker-compose.hithink.yml`，把用户级同花顺凭据文件只读挂载到后端；凭据值不进入镜像、Compose 文件或项目 `.env`。
+- Docker Desktop 中的后端用 `host.docker.internal` 访问 Mac 上的 Futu OpenD；不要把容器内 `127.0.0.1` 当作宿主机。
 - 多个后端副本时，只允许一个副本启用定时任务，避免重复抓取与重复模拟交易。
 
 ## 4. 完整目录地图
