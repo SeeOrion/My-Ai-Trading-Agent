@@ -319,6 +319,8 @@ Tushare 日线（明确标记为日终/非实时）
 - 运行迁移：`cd backend && uv run alembic upgrade head`。
 - 主要表：`watchlist_items`、`watchlist_analysis_snapshots`、`paper_positions`、`strategy_profiles`、`trading_disciplines`、`ai_simulation_portfolios`、`ai_simulation_positions`、`ai_simulation_trades`、`ai_simulation_runs`、`market_scan_runs`、`market_snapshots`。
 - `documents`、`trade_journal_records`、`strategy_runs` 的结构已预留；相应上传/OCR、日志导入、回测用例并未完成，不能宣称已上线。
+- 原生 PostgreSQL 迁移入 Docker：`backend/deploy/migrate_local_postgres_to_docker.py`。它会同时备份两端、暂停后端定时任务、升级源库结构后以主键去重合并，最后自动重启后端。
+- pgAdmin 只读接入：`docker-compose.pgadmin.yml` 仅将 PostgreSQL 绑定到 `127.0.0.1:55433`；`backend/deploy/configure_pgadmin_access.py` 创建独立只读角色，凭据仅写入 Git 忽略的 `.runtime/pgadmin.env`。
 
 ## 12. 安全和隐私（不可突破）
 

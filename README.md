@@ -65,6 +65,25 @@ docker compose -f docker-compose.yml -f docker-compose.hithink.yml ps
 `host.docker.internal:11111` 访问。停止服务使用相同的两个 `-f` 参数执行 `docker compose down`；
 不要追加 `-v`，否则会删除 PostgreSQL 数据卷。
 
+从原生 macOS PostgreSQL 迁移旧数据到 Docker 时，运行：
+
+```bash
+backend/.venv/bin/python backend/deploy/migrate_local_postgres_to_docker.py
+```
+
+工具会先在 `.runtime/backups/` 中生成源库和 Docker 库的私有备份，然后以主键去重的方式合并；
+已存在的 Docker 记录优先，不会删除旧库。该目录已被 Git 忽略。
+
+需要使用 pgAdmin 查看 Docker 数据库时，运行：
+
+```bash
+backend/.venv/bin/python backend/deploy/configure_pgadmin_access.py
+```
+
+数据库只会绑定到本机 `127.0.0.1:55433`，脚本会创建一个只读 pgAdmin 账号，并把完整连接参数
+保存到本机私有文件 `.runtime/pgadmin.env`。请由用户自行打开该文件并将参数填入 pgAdmin；
+密码不会被输出到终端或提交到 Git。
+
 本机 macOS 开发环境已准备两项 `launchd` 用户服务：后端服务和生产构建后的前端预览服务均会在登录后自动启动、异常退出后自动重启。前端固定提供于 `http://127.0.0.1:5173`，并将 `/api` 请求代理到本机后端。前端源码改动后，先执行 `cd frontend && npm run build`，再重启前端服务以加载新页面。
 
 ## 已配置服务如何进入 UI
