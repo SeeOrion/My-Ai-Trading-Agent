@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_trading_agent.domain.ability.factors import FactorMetadata
 from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationOverview
+from ai_trading_agent.domain.aggregate.closing_plan import ClosingPlan
 from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
@@ -524,6 +525,55 @@ class WatchlistAnalysisResponse(BaseModel):
             ],
             ai_summary=analysis.ai_summary,
             notices=list(analysis.notices),
+        )
+
+
+class ClosingPlanItemResponse(BaseModel):
+    watchlist_item_id: UUID
+    symbol: str
+    market: Market
+    instrument_type: InstrumentType
+    label: str
+    action: str
+    action_label: str
+    closing_window: bool
+    window_label: str
+    next_session_plan: str
+    reasons: list[str]
+    observed_at: str | None
+    status: str
+
+
+class ClosingPlanResponse(BaseModel):
+    generated_at: str
+    items: list[ClosingPlanItemResponse]
+    notices: list[str]
+
+    @classmethod
+    def from_domain(cls, plan: ClosingPlan) -> ClosingPlanResponse:
+        return cls(
+            generated_at=plan.generated_at.isoformat(),
+            items=[
+                ClosingPlanItemResponse(
+                    watchlist_item_id=item.watchlist_item_id,
+                    symbol=item.instrument.symbol,
+                    market=item.instrument.market,
+                    instrument_type=item.instrument.instrument_type,
+                    label=item.label,
+                    action=item.action,
+                    action_label=item.action_label,
+                    closing_window=item.closing_window,
+                    window_label=item.window_label,
+                    next_session_plan=item.next_session_plan,
+                    reasons=list(item.reasons),
+                    observed_at=(
+                        item.observed_at.isoformat() if item.observed_at is not None else None
+                    ),
+                    status=item.status,
+                )
+                for item in plan.items
+            ],
+            notices=list(plan.notices),
         )
 
 

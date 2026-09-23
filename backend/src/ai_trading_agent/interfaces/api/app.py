@@ -25,6 +25,7 @@ from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.infrastructure.config.providers import (
     AiSimulationSchedulerSettings,
+    ClosingPlanSchedulerSettings,
     WatchlistAnalysisSettings,
 )
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
@@ -40,6 +41,11 @@ from ai_trading_agent.interfaces.facade.disciplines import (
     discipline_from_input,
     discipline_repository,
     get_discipline,
+)
+from ai_trading_agent.interfaces.facade.closing_plan import (
+    closing_plan,
+    refresh_closing_plan,
+    refresh_closing_window_analyses,
 )
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.market_assistant import answer_market_question
@@ -81,6 +87,7 @@ from ai_trading_agent.interfaces.model.http import (
     AiSimulationRunResponse,
     CandidateResponse,
     CandidateScreenResponse,
+    ClosingPlanResponse,
     DisciplineInput,
     DisciplineResponse,
     FactorResponse,
@@ -137,6 +144,17 @@ def create_app(
             )
             scheduler.start()
             application.state.watchlist_analysis_scheduler = scheduler
+            schedulers.append(scheduler)
+        closing_plan_settings = ClosingPlanSchedulerSettings.from_environment()
+        if enable_scheduled_tasks and closing_plan_settings.scheduler_enabled:
+            scheduler = RecurringTaskScheduler(
+                lambda: refresh_closing_window_analyses(application),
+                closing_plan_settings.interval_seconds,
+                run_immediately=True,
+                align_to_interval_boundary=True,
+            )
+            scheduler.start()
+            application.state.closing_plan_scheduler = scheduler
             schedulers.append(scheduler)
         ai_settings = AiSimulationSchedulerSettings.from_environment()
         if enable_scheduled_tasks and ai_settings.scheduler_enabled:
@@ -355,6 +373,28 @@ def create_app(
             ]
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"自选分析不可用：{error}") from error
+
+    @app.get(
+        "/api/v1/closing-plan",
+        response_model=ClosingPlanResponse,
+        tags=["closing-plan"],
+    )
+    async def get_closing_plan() -> ClosingPlanResponse:
+        try:
+            return ClosingPlanResponse.from_domain(await closing_plan(app))
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"尾盘计划不可用：{error}") from error
+
+    @app.post(
+        "/api/v1/closing-plan/refresh",
+        response_model=ClosingPlanResponse,
+        tags=["closing-plan"],
+    )
+    async def refresh_current_closing_plan() -> ClosingPlanResponse:
+        try:
+            return ClosingPlanResponse.from_domain(await refresh_closing_plan(app))
+        except Exception as error:
+            raise HTTPException(status_code=503, detail=f"尾盘评估刷新失败：{error}") from error
 
     @app.get(
         "/api/v1/watchlist/{item_id}/analysis",

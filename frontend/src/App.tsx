@@ -9,7 +9,7 @@ import {
   AiSimulationOverview, AiSimulationRun, AiSimulationRunInput, fetchAiSimulationOverview, fetchAiSimulationRuns, runAiSimulation, updateAiSimulationSettings,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
   fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief, resolveInstrument,
-  askMarketQuestion, MarketQuestionAnswer
+  askMarketQuestion, MarketQuestionAnswer, ClosingPlan, ClosingPlanItem, fetchClosingPlan, refreshClosingPlan
 } from "./api";
 
 type Page = "dashboard" | "watchlist" | "positions" | "funds" | "strategies" | "disciplines" | "documents" | "journal" | "settings";
@@ -220,8 +220,27 @@ function Dashboard() {
   }
   useEffect(() => { void load(); }, []);
   return <><section className="hero"><div><p className="eyebrow">盘后市场快报</p><h2>今日市场快报</h2><p>从同花顺指数快照汇总主要指数和行业板块涨跌。盘中访问时为最新快照，收盘后可作为当日复盘入口。</p></div><button className="primary" onClick={() => void load(true)} disabled={loading}>{loading ? "更新中…" : "刷新快报"}</button></section>
+    <ClosingPlanPanel />
     <section className="dashboard-layout"><div className="dashboard-main"><section className="panel market-brief-panel"><div className="panel-head"><div><p className="eyebrow">指数总览</p><h2>指数总览</h2><p>上证、深成、创业板和沪深 300。</p></div>{brief && <small className="brief-time">快照于 {new Date(brief.observed_at).toLocaleString()}</small>}</div>{error && <div className="notice">{error}</div>}{brief && <><div className="index-grid">{brief.indices.map((item) => <article className="index-card" key={item.symbol}><small>{item.name}</small><strong>{item.last_price}</strong><span className={Number(item.change_percent) > 0 ? "change up" : Number(item.change_percent) < 0 ? "change down" : "change"}>{formatPercent(item.change_percent)} {item.price_change !== null ? `(${formatSigned(item.price_change)})` : ""}</span></article>)}</div><section className="rotation-section"><div><p className="eyebrow">板块轮动</p><h2>板块轮动</h2><p>按行业指数当日涨跌幅排序，不等同于资金流向。</p></div><div className="rotation-grid"><RotationList title="领涨板块" items={brief.leading_sectors} tone="up" /><RotationList title="领跌板块" items={brief.lagging_sectors} tone="down" /></div></section><p className="brief-note">{brief.coverage}<br />{brief.disclaimer}</p></>}</section><OverviewNews /></div><MarketAssistant /></section>
   </>;
+}
+
+function ClosingPlanPanel() {
+  const [plan, setPlan] = useState<ClosingPlan | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  useEffect(() => { void fetchClosingPlan().then(setPlan).catch((reason) => setError(errorText(reason, "尾盘计划读取失败"))); }, []);
+  async function refresh() {
+    setRefreshing(true); setError(null);
+    try { setPlan(await refreshClosingPlan()); }
+    catch (reason) { setError(errorText(reason, "尾盘评估刷新失败")); }
+    finally { setRefreshing(false); }
+  }
+  return <section className="panel closing-plan-panel"><div className="panel-head"><div><p className="eyebrow">尾盘决策中心</p><h2>尾盘复核与次日预案</h2><p>只覆盖你的自选；结合已保存的行情、因子、策略与个人纪律，生成供人工复核的计划。</p></div><div className="closing-plan-actions"><button className="secondary" onClick={() => void refresh()} disabled={refreshing}>{refreshing ? "正在更新评估…" : "刷新尾盘评估"}</button>{plan && <small className="brief-time">计划生成于 {new Date(plan.generated_at).toLocaleString()}</small>}</div></div>{error && <div className="notice">{error}</div>}{plan && <><div className="closing-plan-list">{plan.items.length ? plan.items.map((item) => <article className="closing-plan-item" key={item.watchlist_item_id}><div className="closing-plan-title"><div><strong>{item.label}</strong><small>{item.symbol} · {marketLabels[item.market]}</small></div><span className={`tag ${closingPlanTone(item.action)}`}>{item.action_label}</span></div><p className="closing-window">{item.closing_window ? "当前处于尾盘复核窗口" : item.window_label}</p><p className="closing-next-plan">{item.next_session_plan}</p><div className="tag-list">{item.reasons.map((reason) => <span className="tag neutral" key={reason}>{displayText(reason)}</span>)}</div>{item.observed_at && <small>研究快照：{new Date(item.observed_at).toLocaleString()} · {displayText(item.status)}</small>}</article>) : <p className="muted">请先在“自选跟踪”加入需要观察的股票、场内 ETF 或基金。</p>}</div>{plan.notices.map((notice) => <div className="notice" key={notice}>{notice}</div>)}</>}</section>;
+}
+
+function closingPlanTone(action: ClosingPlanItem["action"]) {
+  return { consider_entry: "positive", consider_add: "info", take_profit_review: "positive", exit_review: "negative", data_pending: "negative", observe: "neutral" }[action];
 }
 
 const marketQuestionPrompts = ["今天市场行情如何？", "白糖有哪些 ETF 可以了解？", "我想关注科技，有哪些股票可先研究？"];

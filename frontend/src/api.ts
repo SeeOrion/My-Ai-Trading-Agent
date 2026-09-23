@@ -59,6 +59,28 @@ export interface PostMarketBrief {
   coverage: string;
   disclaimer: string;
 }
+
+export interface ClosingPlanItem {
+  watchlist_item_id: string;
+  symbol: string;
+  market: Market;
+  instrument_type: InstrumentType;
+  label: string;
+  action: "observe" | "consider_entry" | "consider_add" | "take_profit_review" | "exit_review" | "data_pending";
+  action_label: string;
+  closing_window: boolean;
+  window_label: string;
+  next_session_plan: string;
+  reasons: string[];
+  observed_at: string | null;
+  status: string;
+}
+
+export interface ClosingPlan {
+  generated_at: string;
+  items: ClosingPlanItem[];
+  notices: string[];
+}
 export interface MarketQuestionCandidate {
   symbol: string;
   name: string;
@@ -241,6 +263,8 @@ export const runMarketScan = (market: Market) =>
 export const fetchLatestMarketScan = (market: Market) =>
   request<MarketScanRun>(`/api/v1/market/scans/${market}/latest`);
 export const fetchNews = () => request<NewsItem[]>("/api/v1/news?source=eastmoney&source=sina");
+export const fetchClosingPlan = () => request<ClosingPlan>("/api/v1/closing-plan");
+export const refreshClosingPlan = () => request<ClosingPlan>("/api/v1/closing-plan/refresh", { method: "POST" });
 export const fetchResearch = (symbol: string, market: Market, instrumentType: InstrumentType = "equity") =>
   request<ResearchReport>("/api/v1/research", {
     method: "POST",

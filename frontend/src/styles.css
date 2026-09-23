@@ -150,3 +150,17 @@ header { gap: 16px; margin-bottom: 18px; } h1 { margin-bottom: 5px; font-size: c
 .ai-discipline-control legend { padding: 0 3px; color: #526178; font-size: 13px; }
 .ai-discipline-control small { color: #718096; font-size: 11px; line-height: 1.5; }
 .ai-discipline-control .secondary { justify-self: start; }
+
+/* Closing-session plans are compact, review-only cards for the personal watchlist. */
+.closing-plan-panel { display: grid; gap: 12px; margin-top: 12px; }
+.closing-plan-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
+.closing-plan-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.closing-plan-item { display: grid; gap: 9px; padding: 13px; border: 1px solid #dce5f0; border-radius: 8px; background: #fbfdff; }
+.closing-plan-title { display: flex; justify-content: space-between; align-items: start; gap: 9px; }
+.closing-plan-title > div { display: grid; gap: 3px; min-width: 0; }
+.closing-plan-title strong { color: #2e405d; overflow-wrap: anywhere; }
+.closing-plan-title small,.closing-plan-item > small { color: #718096; font-size: 11px; }
+.closing-window,.closing-next-plan { margin: 0; color: #526178; font-size: 12px; line-height: 1.55; }
+.closing-window { color: #3b69b4; font-weight: 700; }
+@media (max-width: 1040px) { .closing-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .closing-plan-list { grid-template-columns: 1fr; }.closing-plan-actions { justify-content: flex-start; } }

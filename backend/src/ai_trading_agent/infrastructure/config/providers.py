@@ -193,6 +193,33 @@ class WatchlistAnalysisSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ClosingPlanSchedulerSettings:
+    """Short cadence used only for the last 30 minutes of each local market session."""
+
+    scheduler_enabled: bool = True
+    interval_seconds: int = 300
+
+    @classmethod
+    def from_environment(cls) -> ClosingPlanSchedulerSettings:
+        raw_enabled = os.environ.get(
+            "CLOSING_PLAN_SCHEDULER_ENABLED", "true"
+        ).strip().lower()
+        if raw_enabled not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "CLOSING_PLAN_SCHEDULER_ENABLED must be true or false"
+            )
+        return cls(
+            scheduler_enabled=raw_enabled == "true",
+            interval_seconds=_bounded_int(
+                os.environ.get("CLOSING_PLAN_INTERVAL_SECONDS", "300").strip(),
+                "CLOSING_PLAN_INTERVAL_SECONDS",
+                minimum=300,
+                maximum=3_600,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AiSimulationSchedulerSettings:
     """Intraday cadence for existing AI paper-trading accounts only."""
 

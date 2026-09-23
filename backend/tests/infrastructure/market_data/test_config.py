@@ -3,6 +3,7 @@ import pytest
 from ai_trading_agent.infrastructure.config.providers import (
     AShareQuoteFailoverSettings,
     AiSimulationSchedulerSettings,
+    ClosingPlanSchedulerSettings,
     FutuSettings,
     ProviderConfigurationError,
     TushareSettings,
@@ -39,3 +40,9 @@ def test_ai_simulation_scheduler_reads_bounded_run_timeout(
     monkeypatch.setenv("AI_SIMULATION_RUN_TIMEOUT_SECONDS", "420")
 
     assert AiSimulationSchedulerSettings.from_environment().run_timeout_seconds == 420
+
+
+def test_closing_plan_scheduler_reads_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLOSING_PLAN_INTERVAL_SECONDS", "600")
+
+    assert ClosingPlanSchedulerSettings.from_environment().interval_seconds == 600
