@@ -26,6 +26,7 @@ from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
 from ai_trading_agent.domain.aggregate.watchlist import PaperPosition
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
+from ai_trading_agent.domain.enums.research import DisciplineDecisionStatus
 from ai_trading_agent.domain.service.ai_simulation import (
     AiSimulationCandidate,
     AiSimulationEntryDecision,
@@ -33,6 +34,10 @@ from ai_trading_agent.domain.service.ai_simulation import (
     reconfigure_simulation_portfolio,
 )
 from ai_trading_agent.domain.service.discipline_entry import disciplined_entry_blockers
+from ai_trading_agent.domain.service.simulated_execution import (
+    estimate_simulated_execution,
+    minimum_trade_unit,
+)
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
 from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
@@ -40,6 +45,7 @@ from ai_trading_agent.interfaces.facade.persistence import private_session_facto
 from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview
 from ai_trading_agent.interfaces.facade.research_workspace import (
     builtin_factor_analysis,
+    latest_quote,
     strategy_repository,
     today_candidates,
 )
@@ -84,12 +90,20 @@ async def run_ai_simulation(
         portfolio = await _save_reconfigured_portfolio(
             repository, portfolio, positions, request, strategies
         )
+    portfolio, positions, discipline_notices = await _apply_discipline_exits(
+        app, repository, portfolio, positions
+    )
     screen, _ = await today_candidates(
         request.market, CandidateRanking.BALANCED_ENTRY, refresh=True
     )
     existing_symbols = {item.instrument.symbol for item in positions}
     notices: list[str] = [
-        "AI 模拟组合仅在预设高流动性研究样本中筛选，不是全市场扫描，也不会发送真实订单。"
+        "AI 模拟组合仅在预设高流动性研究样本中筛选，不是全市场扫描，也不会发送真实订单。",
+        (
+            "模拟成交按最新参考价叠加 5bp 不利滑点和 5bp 成本估算记账；"
+            "实际市场成交、税费与券商规则可能不同。"
+        ),
+        *discipline_notices,
     ]
     if not strategies:
         notices.append("未选择匹配的启用策略：使用内置因子与 25% 单标的风险预算。")
@@ -135,7 +149,7 @@ async def run_ai_simulation(
             open_position_count=len(positions),
             max_positions=portfolio.max_positions,
             max_position_percent=_max_position_percent(strategies),
-            lot_size=Decimal("100") if request.market is Market.A_SHARE else Decimal("1"),
+            lot_size=minimum_trade_unit(candidate.observation.instrument),
         )
         discipline_blockers = await _discipline_entry_blockers(app, candidate)
         if discipline_blockers:
@@ -147,16 +161,21 @@ async def run_ai_simulation(
         allocation = decision.allocation
         if allocation is None:
             continue
+        execution = estimate_simulated_execution(
+            side="buy",
+            reference_price=candidate.observation.last_price,
+            quantity=allocation.quantity,
+        )
         position = AiSimulationPosition(
             position_id=uuid4(),
             portfolio_id=portfolio.portfolio_id,
             instrument=candidate.observation.instrument,
             quantity=allocation.quantity,
-            average_cost=candidate.observation.last_price,
+            average_cost=execution.cash_required / allocation.quantity,
             opened_at=datetime.now(UTC),
             candidate_score=candidate.score,
             factor_context=simulated_candidate.available_factor_ids,
-            rationale=allocation.rationale,
+            rationale=tuple((*allocation.rationale, *execution.rationale)),
         )
         await repository.save_position(position)
         await repository.save_trade(
@@ -166,7 +185,7 @@ async def run_ai_simulation(
                 position_id=position.position_id,
                 side="buy",
                 quantity=position.quantity,
-                price=position.average_cost,
+                price=execution.fill_price,
                 executed_at=position.opened_at,
                 rationale=position.rationale,
             )
@@ -176,7 +195,7 @@ async def run_ai_simulation(
             market=portfolio.market,
             currency=portfolio.currency,
             initial_capital=portfolio.initial_capital,
-            cash_balance=portfolio.cash_balance - allocation.amount,
+            cash_balance=portfolio.cash_balance - execution.cash_required,
             max_positions=portfolio.max_positions,
             strategy_ids=portfolio.strategy_ids,
         )
@@ -530,6 +549,119 @@ async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]
     )
     decisions = await evaluate_active_disciplines(app, observation.instrument, quote)
     return disciplined_entry_blockers(decisions)
+
+
+async def _apply_discipline_exits(
+    app: FastAPI,
+    repository: SqlAlchemyAiSimulationRepository,
+    portfolio: AiSimulationPortfolio,
+    positions: list[AiSimulationPosition],
+) -> tuple[AiSimulationPortfolio, list[AiSimulationPosition], tuple[str, ...]]:
+    """Close paper positions when an enabled personal stop/target is reached.
+
+    A take-profit or exit condition closes the full simulated position once.
+    This avoids silently creating a repeated 10-minute sell loop.  Add-position
+    conditions remain a visible review state until a separate, versioned
+    scaling plan is configured.
+    """
+    active_positions: list[AiSimulationPosition] = []
+    notices: list[str] = []
+    current_portfolio = portfolio
+    for position in positions:
+        try:
+            quote = await latest_quote(position.instrument)
+        except Exception:
+            active_positions.append(position)
+            notices.append(
+                f"{position.instrument.symbol} 未取得可验证行情，"
+                "未执行任何模拟卖出；请在数据源恢复后再次复核。"
+            )
+            continue
+        decisions = await evaluate_active_disciplines(app, position.instrument, quote)
+        exit_decision = next(
+            (
+                item
+                for item in decisions
+                if item.status is DisciplineDecisionStatus.EXIT
+            ),
+            None,
+        )
+        profit_decision = next(
+            (
+                item
+                for item in decisions
+                if item.status is DisciplineDecisionStatus.TAKE_PROFIT
+            ),
+            None,
+        )
+        triggering_decision = exit_decision or profit_decision
+        if triggering_decision is None:
+            if any(
+                item.status is DisciplineDecisionStatus.ADD_CONDITION_MET
+                for item in decisions
+            ):
+                notices.append(
+                    f"{position.instrument.symbol} 已满足个人纪律的加仓价；"
+                    "当前版本将其保留为复核提示，不会在没有已版本化加仓计划时重复模拟买入。"
+                )
+            active_positions.append(position)
+            continue
+
+        execution = estimate_simulated_execution(
+            side="sell", reference_price=quote.last_price, quantity=position.quantity
+        )
+        state_label = (
+            "清仓条件"
+            if triggering_decision.status is DisciplineDecisionStatus.EXIT
+            else "止盈条件"
+        )
+        rationale = (
+            f"个人纪律「{triggering_decision.discipline.name}」触发{state_label}，"
+            f"参考阈值 {triggering_decision.matched_level}，本轮模拟全量平仓。",
+            f"行情来源：{quote.source}，观测时间：{quote.observed_at.isoformat()}。",
+            *execution.rationale,
+        )
+        closed_position = AiSimulationPosition(
+            position_id=position.position_id,
+            portfolio_id=position.portfolio_id,
+            instrument=position.instrument,
+            quantity=position.quantity,
+            average_cost=position.average_cost,
+            opened_at=position.opened_at,
+            candidate_score=position.candidate_score,
+            factor_context=position.factor_context,
+            rationale=tuple((*position.rationale, *rationale)),
+            status="closed",
+        )
+        await repository.save_position(closed_position)
+        await repository.save_trade(
+            AiSimulationTrade(
+                trade_id=uuid4(),
+                portfolio_id=current_portfolio.portfolio_id,
+                position_id=position.position_id,
+                side="sell",
+                quantity=position.quantity,
+                price=execution.fill_price,
+                executed_at=datetime.now(UTC),
+                rationale=rationale,
+            )
+        )
+        current_portfolio = AiSimulationPortfolio(
+            portfolio_id=current_portfolio.portfolio_id,
+            market=current_portfolio.market,
+            currency=current_portfolio.currency,
+            initial_capital=current_portfolio.initial_capital,
+            cash_balance=current_portfolio.cash_balance + execution.cash_proceeds,
+            max_positions=current_portfolio.max_positions,
+            strategy_ids=current_portfolio.strategy_ids,
+            status=current_portfolio.status,
+        )
+        current_portfolio = await repository.save_portfolio(current_portfolio)
+        notices.append(
+            f"{position.instrument.symbol} 已因个人纪律{state_label}完成模拟平仓；"
+            "仅更新模拟账户，不会提交真实订单。"
+        )
+    return current_portfolio, active_positions, tuple(notices)
 
 
 def _currency_for_market(market: Market) -> str:

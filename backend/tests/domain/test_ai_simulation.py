@@ -41,9 +41,9 @@ def test_ai_simulation_uses_risk_budget_and_a_share_board_lots() -> None:
     )
 
     assert allocation is not None
-    assert allocation.quantity == Decimal("2500")
-    assert allocation.amount == Decimal("25000")
-    assert allocation.allocation_percent == Decimal("25")
+    assert allocation.quantity == Decimal("1900")
+    assert allocation.amount == Decimal("19000")
+    assert allocation.allocation_percent == Decimal("19")
 
 
 def test_ai_simulation_allows_entry_when_only_factor_inputs_are_missing() -> None:
@@ -70,7 +70,7 @@ def test_ai_simulation_allows_entry_when_only_factor_inputs_are_missing() -> Non
     assert allocation is not None
 
 
-def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
+def test_ai_simulation_does_not_treat_missing_factors_as_adverse_evidence() -> None:
     candidate = AiSimulationCandidate(
         symbol="600519.SH",
         display_name="贵州茅台",
@@ -94,9 +94,37 @@ def test_ai_simulation_explains_each_rejected_entry_condition() -> None:
     )
 
     assert decision.allocation is None
-    assert any("已计算的因子存在不利方向" in item for item in decision.blockers)
-    assert any("支持 0 项，逆风 2 项" in item for item in decision.blockers)
     assert any("达到上限" in item for item in decision.blockers)
+    assert not any("风险方向不占优" in item for item in decision.blockers)
+
+
+def test_ai_simulation_allows_limited_adverse_evidence_when_support_is_stronger() -> None:
+    decision = evaluate_simulated_entry(
+        _candidate(score="76", supportive=3, adverse=1),
+        available_cash=Decimal("100000"),
+        initial_capital=Decimal("100000"),
+        open_position_count=0,
+        max_positions=3,
+        max_position_percent=Decimal("25"),
+        lot_size=Decimal("100"),
+    )
+
+    assert decision.allocation is not None
+
+
+def test_ai_simulation_rejects_risk_dominant_factor_evidence() -> None:
+    decision = evaluate_simulated_entry(
+        _candidate(score="76", supportive=2, adverse=2),
+        available_cash=Decimal("100000"),
+        initial_capital=Decimal("100000"),
+        open_position_count=0,
+        max_positions=3,
+        max_position_percent=Decimal("25"),
+        lot_size=Decimal("100"),
+    )
+
+    assert decision.allocation is None
+    assert any("风险方向不占优" in item for item in decision.blockers)
 
 
 def test_reconfigure_simulation_portfolio_preserves_positions_and_applies_capital_delta() -> None:

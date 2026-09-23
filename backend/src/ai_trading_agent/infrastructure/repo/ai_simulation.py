@@ -90,21 +90,21 @@ class SqlAlchemyAiSimulationRepository:
 
     async def save_position(self, position: AiSimulationPosition) -> AiSimulationPosition:
         async with self._sessions() as session:
-            record = AiSimulationPositionRecord(
-                position_id=str(position.position_id),
-                portfolio_id=str(position.portfolio_id),
-                symbol=position.instrument.symbol,
-                market=position.instrument.market.value,
-                instrument_type=position.instrument.instrument_type.value,
-                quantity=position.quantity,
-                average_cost=position.average_cost,
-                opened_at=position.opened_at,
-                candidate_score=position.candidate_score,
-                factor_context=list(position.factor_context),
-                rationale=list(position.rationale),
-                status=position.status,
-            )
-            session.add(record)
+            record = await session.get(AiSimulationPositionRecord, str(position.position_id))
+            if record is None:
+                record = AiSimulationPositionRecord(position_id=str(position.position_id))
+                session.add(record)
+            record.portfolio_id = str(position.portfolio_id)
+            record.symbol = position.instrument.symbol
+            record.market = position.instrument.market.value
+            record.instrument_type = position.instrument.instrument_type.value
+            record.quantity = position.quantity
+            record.average_cost = position.average_cost
+            record.opened_at = position.opened_at
+            record.candidate_score = position.candidate_score
+            record.factor_context = list(position.factor_context)
+            record.rationale = list(position.rationale)
+            record.status = position.status
             await session.commit()
             await session.refresh(record)
             return _position(record)

@@ -21,7 +21,7 @@
 1. **先自选，后研究。** 默认定时任务只刷新用户的自选标的，不启动全市场扫描。
 2. **数据源可降级、每份数据可追溯。** 返回值应保留 `source` 与时间；日终数据不能被标成实时数据。
 3. **个人纪律是可选硬约束。** 未配置适用纪律时，AI 模拟交易按策略、因子与风险预算判断；配置并启用后，必须满足纪律买入条件才允许模拟建仓。
-4. **缺失因子不是不利因子。** 数据缺口只提示；不利因子、风险预算、仓位上限或纪律不满足才会阻止 AI 模拟建仓。
+4. **缺失因子不是不利因子。** 数据缺口只提示；已观测因子风险占优、风险预算、仓位上限或纪律不满足才会阻止 AI 模拟建仓。
 5. **场外基金与股票不同。** 只展示净值与定期披露资料；没有真实 OHLCV 时，不能虚构 K 线、成交量、资金流或技术因子。
 
 ## 2. 首次接手时的检查清单
@@ -189,7 +189,7 @@ infrastructure (DB / external API / configuration adapters)
 | 个人策略 | `domain/aggregate/strategy.py`、`application/strategies.py` | 表：`strategy_profiles`；前端：`StrategyWorkspace` |
 | 个人纪律 | `domain/aggregate/discipline.py`、`domain/service/discipline_entry.py` | 表：`trading_disciplines`；前端：`DisciplineWorkspace` |
 | 手动模拟持仓/盈亏 | `domain/service/position_metrics.py`、`interfaces/facade/portfolio.py` | 表：`paper_positions`；前端：`ManualPaperPortfolioWorkspace` |
-| AI 模拟选股与交易 | `interfaces/facade/ai_simulation.py`、`domain/service/ai_simulation.py` | 表：`ai_simulation_*`；前端：`AiSimulationWorkspace` |
+| AI 模拟选股与交易 | `interfaces/facade/ai_simulation.py`、`domain/service/ai_simulation.py`、`domain/service/simulated_execution.py` | 表：`ai_simulation_*`；前端：`AiSimulationWorkspace` |
 | AI 市场问答 | `interfaces/facade/market_assistant.py`、`infrastructure/rpc/llm_advisor.py` | 前端：`MarketAssistant` |
 | 盘后快报、指数与板块轮动 | `interfaces/facade/market_brief.py`、`infrastructure/rpc/hithink_market_brief.py` | 前端：`Dashboard` |
 | 财经资讯与情绪 | `application/news.py`、`infrastructure/rpc/akshare_news.py`、`infrastructure/rpc/llm_news.py` | 前端总览：`OverviewNews` |
@@ -287,7 +287,10 @@ Tushare 日线（明确标记为日终/非实时）
 
 - 只在预设的高流动性**研究样本**中选择，非全市场，也从不下真实订单。
 - 支持多选启用策略；仅参考所有选中策略的因子，仓位上限取最严格值。
-- 缺失因子只在决策报告和通知中提示；不利因子、现金/风险预算不足、达到最大持仓或个人纪律不满足会阻止建仓。
+- 建仓评分阈值为 65；若存在已观测因子，至少需 2 项支持，且支持项必须多于逆风项。缺失因子只在决策报告和通知中提示，不能单独否决。
+- 仓位先受剩余槽位和所选策略最严格单标的上限约束，再按评分及因子证据强度缩放；不会因为刚好达标就满仓。
+- 模拟买卖使用统一成交估算：参考价加/减 5bp 不利滑点，并计入 5bp 成本估算；这不是券商成交、真实税费或投资建议。
+- 已启用个人纪律的止盈/清仓条件优先于新的选股；取得可验证行情后才会全量平掉相应模拟仓位。加仓条件当前只生成复核提示，避免每十分钟重复加仓，直到引入版本化加仓计划。
 - 每次手动或定时运行均写入 `ai_simulation_runs`，便于日后审计。
 - AI 模拟账户目前仅支持 `a_share`、`hong_kong`、`united_states`；不接受 `fund` 市场。
 

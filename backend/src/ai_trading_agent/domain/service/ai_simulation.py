@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 from uuid import UUID
 
 from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationPortfolio
+from ai_trading_agent.domain.service.simulated_execution import quantity_for_cash_budget
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,11 +126,19 @@ def evaluate_simulated_entry(
         blockers.append(f"持仓数已达到上限 {max_positions}，为保持分散化不再建仓。")
     if candidate.last_price <= 0:
         blockers.append("最新行情价格无效，无法计算模拟买入数量。")
-    if candidate.score < Decimal("70"):
-        blockers.append(f"候选评分 {candidate.score}/100，低于建仓阈值 70。")
-    if candidate.adverse_factor_count > 0:
+    observed_factor_count = len(candidate.available_factor_ids)
+    if candidate.score < Decimal("65"):
+        blockers.append(f"候选评分 {candidate.score}/100，低于均衡建仓阈值 65。")
+    if observed_factor_count > 0 and candidate.supportive_factor_count < 2:
         blockers.append(
-            "已计算的因子存在不利方向，保守规则不创建模拟仓位："
+            f"支持因子仅 {candidate.supportive_factor_count} 项，未达到至少 2 项的证据要求。"
+        )
+    if (
+        observed_factor_count > 0
+        and candidate.adverse_factor_count >= candidate.supportive_factor_count
+    ):
+        blockers.append(
+            "已计算因子的风险方向不占优，不创建模拟仓位："
             f"支持 {candidate.supportive_factor_count} 项，"
             f"逆风 {candidate.adverse_factor_count} 项。"
         )
@@ -142,10 +151,22 @@ def evaluate_simulated_entry(
     diversified_budget = available_cash / remaining_slots
     strategy_budget = initial_capital * max_position_percent / Decimal("100")
     amount_cap = min(diversified_budget, strategy_budget, available_cash)
-    whole_lots = (amount_cap / candidate.last_price / lot_size).to_integral_value(
-        rounding=ROUND_DOWN
+    # Scale exposure by the strength of observed evidence.  This deliberately
+    # keeps a cash buffer: a barely-qualified score receives a smaller starter
+    # position, while a strong but imperfect signal cannot consume the full cap.
+    score_component = min(Decimal("0.20"), (candidate.score - Decimal("65")) / Decimal("100"))
+    factor_component = min(
+        Decimal("0.20"),
+        Decimal(candidate.supportive_factor_count - candidate.adverse_factor_count)
+        / Decimal("20"),
     )
-    quantity = whole_lots * lot_size
+    confidence = min(Decimal("0.85"), Decimal("0.45") + score_component + factor_component)
+    target_budget = amount_cap * confidence
+    quantity = quantity_for_cash_budget(
+        cash_budget=target_budget,
+        reference_price=candidate.last_price,
+        lot_size=lot_size,
+    )
     if quantity <= 0:
         return AiSimulationEntryDecision(
             None,
@@ -163,13 +184,13 @@ def evaluate_simulated_entry(
             amount=amount,
             allocation_percent=amount / initial_capital * Decimal("100"),
             rationale=(
-                f"候选综合评分 {candidate.score}/100，达到模拟建仓阈值 70。",
+                f"候选综合评分 {candidate.score}/100，达到均衡模拟建仓阈值 65。",
                 (
                     f"已观测因子中支持 {candidate.supportive_factor_count} 项、"
                     f"逆风 {candidate.adverse_factor_count} 项。"
                 ),
                 (
-                    "按剩余槽位分散和单标的上限分配 "
+                    "按剩余槽位、单标的上限与证据强度分配 "
                     f"{amount / initial_capital * Decimal('100'):.2f}% 本金。"
                 ),
                 *candidate.rationale,
