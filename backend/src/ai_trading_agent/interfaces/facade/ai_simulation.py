@@ -23,6 +23,7 @@ from ai_trading_agent.domain.aggregate.ai_simulation import (
 )
 from ai_trading_agent.domain.aggregate.market import Quote
 from ai_trading_agent.domain.aggregate.strategy import StrategyProfile
+from ai_trading_agent.domain.aggregate.technical import calculate_indicators
 from ai_trading_agent.domain.aggregate.watchlist import PaperPosition
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
@@ -34,9 +35,16 @@ from ai_trading_agent.domain.service.ai_simulation import (
     reconfigure_simulation_portfolio,
 )
 from ai_trading_agent.domain.service.discipline_entry import disciplined_entry_blockers
+from ai_trading_agent.domain.service.factor_analysis import analyze_builtin_factors
 from ai_trading_agent.domain.service.simulated_execution import (
     estimate_simulated_execution,
     minimum_trade_unit,
+)
+from ai_trading_agent.domain.service.simulation_exit import (
+    EXIT_POLICY_VERSION,
+    SimulationExitDecision,
+    SimulationExitEvidence,
+    evaluate_simulation_exit,
 )
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
 from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
@@ -45,6 +53,7 @@ from ai_trading_agent.interfaces.facade.persistence import private_session_facto
 from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview
 from ai_trading_agent.interfaces.facade.research_workspace import (
     builtin_factor_analysis,
+    historical_bars_provider,
     latest_quote,
     strategy_repository,
     today_candidates,
@@ -64,9 +73,7 @@ def ai_simulation_repository(app: FastAPI) -> SqlAlchemyAiSimulationRepository:
     return SqlAlchemyAiSimulationRepository(private_session_factory(app))
 
 
-async def run_ai_simulation(
-    app: FastAPI, request: AiSimulationRunRequest
-) -> AiSimulationOverview:
+async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> AiSimulationOverview:
     """Run one bounded, deterministic AI paper-trading review for one market."""
     started_at = datetime.now(UTC)
     repository = ai_simulation_repository(app)
@@ -90,8 +97,8 @@ async def run_ai_simulation(
         portfolio = await _save_reconfigured_portfolio(
             repository, portfolio, positions, request, strategies
         )
-    portfolio, positions, discipline_notices = await _apply_discipline_exits(
-        app, repository, portfolio, positions
+    portfolio, positions, discipline_notices = await _apply_position_exits(
+        app, repository, portfolio, positions, strategies
     )
     screen, _ = await today_candidates(
         request.market, CandidateRanking.BALANCED_ENTRY, refresh=True
@@ -176,6 +183,7 @@ async def run_ai_simulation(
             candidate_score=candidate.score,
             factor_context=simulated_candidate.available_factor_ids,
             rationale=tuple((*allocation.rationale, *execution.rationale)),
+            highest_price=execution.fill_price,
         )
         await repository.save_position(position)
         await repository.save_trade(
@@ -207,9 +215,7 @@ async def run_ai_simulation(
 
     unavailable_factor_ids = tuple(
         dict.fromkeys(
-            factor_id
-            for report in decision_reports
-            for factor_id in report.unavailable_factor_ids
+            factor_id for report in decision_reports for factor_id in report.unavailable_factor_ids
         )
     )
     if unavailable_factor_ids:
@@ -274,9 +280,7 @@ async def update_ai_simulation_settings(
         daily_pnl=overview.daily_pnl,
         month_to_date_pnl=overview.month_to_date_pnl,
         notices=tuple(
-            dict.fromkeys(
-                (*overview.notices, "AI 模拟账户设置已同步；既有持仓和交易记录已保留。")
-            )
+            dict.fromkeys((*overview.notices, "AI 模拟账户设置已同步；既有持仓和交易记录已保留。"))
         ),
     )
 
@@ -418,11 +422,7 @@ async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOv
         for position in positions
     )
     summary = next(
-        (
-            item
-            for item in paper_overview.summary.currencies
-            if item.currency == portfolio.currency
-        ),
+        (item for item in paper_overview.summary.currencies if item.currency == portfolio.currency),
         None,
     )
     invested_cost = sum((item.cost_amount for item in positions), Decimal("0"))
@@ -495,25 +495,18 @@ def _candidate_from_analysis(
         item for item in observations if requested is None or item["identifier"] in requested
     )
     available = tuple(
-        str(item["identifier"])
-        for item in relevant
-        if item["direction"] != "unavailable"
+        str(item["identifier"]) for item in relevant if item["direction"] != "unavailable"
     )
     unavailable = tuple(
-        str(item["identifier"])
-        for item in relevant
-        if item["direction"] == "unavailable"
+        str(item["identifier"]) for item in relevant if item["direction"] == "unavailable"
     )
     supportive = sum(item["direction"] == "supportive" for item in relevant)
     adverse = sum(item["direction"] == "adverse" for item in relevant)
     rationale = tuple(
-        str(item["interpretation"])
-        for item in relevant
-        if item["direction"] == "supportive"
+        str(item["interpretation"]) for item in relevant if item["direction"] == "supportive"
     ) or tuple(candidate.reasons)
     strategy_context = tuple(
-        _strategy_factor_context(strategy, observations)
-        for strategy in strategies
+        _strategy_factor_context(strategy, observations) for strategy in strategies
     )
     return AiSimulationCandidate(
         symbol=candidate.observation.instrument.symbol,
@@ -551,19 +544,14 @@ async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]
     return disciplined_entry_blockers(decisions)
 
 
-async def _apply_discipline_exits(
+async def _apply_position_exits(
     app: FastAPI,
     repository: SqlAlchemyAiSimulationRepository,
     portfolio: AiSimulationPortfolio,
     positions: list[AiSimulationPosition],
+    strategies: tuple[StrategyProfile, ...],
 ) -> tuple[AiSimulationPortfolio, list[AiSimulationPosition], tuple[str, ...]]:
-    """Close paper positions when an enabled personal stop/target is reached.
-
-    A take-profit or exit condition closes the full simulated position once.
-    This avoids silently creating a repeated 10-minute sell loop.  Add-position
-    conditions remain a visible review state until a separate, versioned
-    scaling plan is configured.
-    """
+    """Apply strict personal discipline or the default evidence-based exit policy."""
     active_positions: list[AiSimulationPosition] = []
     notices: list[str] = []
     current_portfolio = portfolio
@@ -579,89 +567,245 @@ async def _apply_discipline_exits(
             continue
         decisions = await evaluate_active_disciplines(app, position.instrument, quote)
         exit_decision = next(
-            (
-                item
-                for item in decisions
-                if item.status is DisciplineDecisionStatus.EXIT
-            ),
+            (item for item in decisions if item.status is DisciplineDecisionStatus.EXIT),
             None,
         )
         profit_decision = next(
-            (
-                item
-                for item in decisions
-                if item.status is DisciplineDecisionStatus.TAKE_PROFIT
-            ),
+            (item for item in decisions if item.status is DisciplineDecisionStatus.TAKE_PROFIT),
             None,
         )
         triggering_decision = exit_decision or profit_decision
-        if triggering_decision is None:
-            if any(
-                item.status is DisciplineDecisionStatus.ADD_CONDITION_MET
-                for item in decisions
-            ):
+        if triggering_decision is not None:
+            state_label = (
+                "清仓条件"
+                if triggering_decision.status is DisciplineDecisionStatus.EXIT
+                else "止盈条件"
+            )
+            decision = SimulationExitDecision(
+                action="full_exit",
+                quantity=position.quantity,
+                reason_code="personal_discipline",
+                rationale=(
+                    f"个人纪律「{triggering_decision.discipline.name}」触发{state_label}，"
+                    f"参考阈值 {triggering_decision.matched_level}，本轮模拟全量平仓。",
+                ),
+                highest_price=max(position.highest_price, quote.last_price),
+                profit_take_stage=position.profit_take_stage,
+                trailing_stop_price=position.trailing_stop_price,
+            )
+            current_portfolio, updated_position, notice = await _execute_position_sale(
+                repository, current_portfolio, position, quote, decision
+            )
+            notices.append(notice)
+            if updated_position is not None:
+                active_positions.append(updated_position)
+            continue
+
+        if decisions:
+            updated_position = _position_with_exit_state(
+                position,
+                highest_price=max(position.highest_price, quote.last_price),
+                profit_take_stage=position.profit_take_stage,
+                trailing_stop_price=position.trailing_stop_price,
+            )
+            if updated_position != position:
+                updated_position = await repository.save_position(updated_position)
+            if any(item.status is DisciplineDecisionStatus.ADD_CONDITION_MET for item in decisions):
                 notices.append(
                     f"{position.instrument.symbol} 已满足个人纪律的加仓价；"
                     "当前版本将其保留为复核提示，不会在没有已版本化加仓计划时重复模拟买入。"
                 )
-            active_positions.append(position)
+            notices.append(
+                f"{position.instrument.symbol} 已启用个人纪律且本轮未触发止盈/清仓；"
+                "个人纪律优先，未使用默认自动卖出规则。"
+            )
+            active_positions.append(updated_position)
             continue
 
-        execution = estimate_simulated_execution(
-            side="sell", reference_price=quote.last_price, quantity=position.quantity
-        )
-        state_label = (
-            "清仓条件"
-            if triggering_decision.status is DisciplineDecisionStatus.EXIT
-            else "止盈条件"
-        )
-        rationale = (
-            f"个人纪律「{triggering_decision.discipline.name}」触发{state_label}，"
-            f"参考阈值 {triggering_decision.matched_level}，本轮模拟全量平仓。",
-            f"行情来源：{quote.source}，观测时间：{quote.observed_at.isoformat()}。",
-            *execution.rationale,
-        )
-        closed_position = AiSimulationPosition(
-            position_id=position.position_id,
-            portfolio_id=position.portfolio_id,
-            instrument=position.instrument,
-            quantity=position.quantity,
-            average_cost=position.average_cost,
-            opened_at=position.opened_at,
-            candidate_score=position.candidate_score,
-            factor_context=position.factor_context,
-            rationale=tuple((*position.rationale, *rationale)),
-            status="closed",
-        )
-        await repository.save_position(closed_position)
-        await repository.save_trade(
-            AiSimulationTrade(
-                trade_id=uuid4(),
-                portfolio_id=current_portfolio.portfolio_id,
-                position_id=position.position_id,
-                side="sell",
-                quantity=position.quantity,
-                price=execution.fill_price,
-                executed_at=datetime.now(UTC),
-                rationale=rationale,
+        evidence, evidence_notice = await _automatic_exit_evidence(position, quote, strategies)
+        if evidence_notice is not None:
+            notices.append(evidence_notice)
+        decision = evaluate_simulation_exit(evidence)
+        if decision.action == "hold":
+            updated_position = _position_with_exit_state(
+                position,
+                highest_price=decision.highest_price,
+                profit_take_stage=decision.profit_take_stage,
+                trailing_stop_price=decision.trailing_stop_price,
             )
+            if updated_position != position:
+                updated_position = await repository.save_position(updated_position)
+            active_positions.append(updated_position)
+            continue
+
+        current_portfolio, updated_position, notice = await _execute_position_sale(
+            repository, current_portfolio, position, quote, decision
         )
-        current_portfolio = AiSimulationPortfolio(
-            portfolio_id=current_portfolio.portfolio_id,
-            market=current_portfolio.market,
-            currency=current_portfolio.currency,
-            initial_capital=current_portfolio.initial_capital,
-            cash_balance=current_portfolio.cash_balance + execution.cash_proceeds,
-            max_positions=current_portfolio.max_positions,
-            strategy_ids=current_portfolio.strategy_ids,
-            status=current_portfolio.status,
-        )
-        current_portfolio = await repository.save_portfolio(current_portfolio)
-        notices.append(
-            f"{position.instrument.symbol} 已因个人纪律{state_label}完成模拟平仓；"
-            "仅更新模拟账户，不会提交真实订单。"
-        )
+        notices.append(notice)
+        if updated_position is not None:
+            active_positions.append(updated_position)
     return current_portfolio, active_positions, tuple(notices)
+
+
+async def _automatic_exit_evidence(
+    position: AiSimulationPosition,
+    quote: Quote,
+    strategies: tuple[StrategyProfile, ...],
+) -> tuple[SimulationExitEvidence, str | None]:
+    atr_14 = None
+    sma_20 = None
+    factor_directions: tuple[tuple[str, str], ...] = ()
+    notice = None
+    try:
+        provider = historical_bars_provider(position.instrument)
+        bars = await provider.get_daily_bars(position.instrument, limit=90)
+        indicators = calculate_indicators(bars)
+        analysis = analyze_builtin_factors(
+            position.instrument,
+            bars,
+            technical_source=provider.name,
+        )
+        requested_factor_ids = (
+            set().union(*(strategy.factor_ids for strategy in strategies))
+            if strategies
+            else {
+                "momentum_20d",
+                "volatility_20d",
+                "short_reversal_5d",
+                "moving_average_trend",
+                "relative_volume_20d",
+                "news_sentiment",
+            }
+        )
+        factor_directions = tuple(
+            (item.identifier, item.direction)
+            for item in analysis.observations
+            if item.identifier in requested_factor_ids and item.direction != "unavailable"
+        )
+        atr_14 = indicators.atr_14
+        sma_20 = indicators.sma_20
+    except Exception as error:
+        notice = (
+            f"{position.instrument.symbol} 日线/因子退出证据暂不可用：{error}；"
+            "本轮仍检查硬止损、固定盈利目标和已启用的移动保护。"
+        )
+    return (
+        SimulationExitEvidence(
+            current_price=quote.last_price,
+            average_cost=position.average_cost,
+            quantity=position.quantity,
+            highest_price=position.highest_price,
+            profit_take_stage=position.profit_take_stage,
+            lot_size=minimum_trade_unit(position.instrument),
+            atr_14=atr_14,
+            sma_20=sma_20,
+            factor_directions=factor_directions,
+        ),
+        notice,
+    )
+
+
+async def _execute_position_sale(
+    repository: SqlAlchemyAiSimulationRepository,
+    portfolio: AiSimulationPortfolio,
+    position: AiSimulationPosition,
+    quote: Quote,
+    decision: SimulationExitDecision,
+) -> tuple[AiSimulationPortfolio, AiSimulationPosition | None, str]:
+    execution = estimate_simulated_execution(
+        side="sell", reference_price=quote.last_price, quantity=decision.quantity
+    )
+    rationale = (
+        *decision.rationale,
+        *(
+            ()
+            if decision.reason_code == "personal_discipline"
+            else (f"自动退出规则版本：{EXIT_POLICY_VERSION}。",)
+        ),
+        f"行情来源：{quote.source}，观测时间：{quote.observed_at.isoformat()}。",
+        *execution.rationale,
+    )
+    remaining_quantity = position.quantity - decision.quantity
+    is_closed = decision.action == "full_exit" or remaining_quantity <= 0
+    updated_position = AiSimulationPosition(
+        position_id=position.position_id,
+        portfolio_id=position.portfolio_id,
+        instrument=position.instrument,
+        quantity=position.quantity if is_closed else remaining_quantity,
+        average_cost=position.average_cost,
+        opened_at=position.opened_at,
+        candidate_score=position.candidate_score,
+        factor_context=position.factor_context,
+        rationale=tuple((*position.rationale, *rationale)),
+        highest_price=decision.highest_price,
+        profit_take_stage=decision.profit_take_stage,
+        trailing_stop_price=decision.trailing_stop_price,
+        status="closed" if is_closed else "open",
+    )
+    updated_position = await repository.save_position(updated_position)
+    await repository.save_trade(
+        AiSimulationTrade(
+            trade_id=uuid4(),
+            portfolio_id=portfolio.portfolio_id,
+            position_id=position.position_id,
+            side="sell",
+            quantity=decision.quantity,
+            price=execution.fill_price,
+            executed_at=datetime.now(UTC),
+            rationale=rationale,
+        )
+    )
+    updated_portfolio = AiSimulationPortfolio(
+        portfolio_id=portfolio.portfolio_id,
+        market=portfolio.market,
+        currency=portfolio.currency,
+        initial_capital=portfolio.initial_capital,
+        cash_balance=portfolio.cash_balance + execution.cash_proceeds,
+        max_positions=portfolio.max_positions,
+        strategy_ids=portfolio.strategy_ids,
+        status=portfolio.status,
+    )
+    updated_portfolio = await repository.save_portfolio(updated_portfolio)
+    action_label = "全量平仓" if is_closed else f"分批卖出 {decision.quantity}"
+    notice = (
+        f"{position.instrument.symbol} 已因「{_exit_reason_label(decision.reason_code)}」"
+        f"完成{action_label}；仅更新模拟账户，不会提交真实订单。"
+    )
+    return updated_portfolio, None if is_closed else updated_position, notice
+
+
+def _position_with_exit_state(
+    position: AiSimulationPosition,
+    *,
+    highest_price: Decimal,
+    profit_take_stage: int,
+    trailing_stop_price: Decimal | None,
+) -> AiSimulationPosition:
+    return AiSimulationPosition(
+        position_id=position.position_id,
+        portfolio_id=position.portfolio_id,
+        instrument=position.instrument,
+        quantity=position.quantity,
+        average_cost=position.average_cost,
+        opened_at=position.opened_at,
+        candidate_score=position.candidate_score,
+        factor_context=position.factor_context,
+        rationale=position.rationale,
+        highest_price=highest_price,
+        profit_take_stage=profit_take_stage,
+        trailing_stop_price=trailing_stop_price,
+        status=position.status,
+    )
+
+
+def _exit_reason_label(reason_code: str) -> str:
+    return {
+        "personal_discipline": "个人纪律",
+        "hard_stop_loss": "8% 硬止损",
+        "first_profit_target": "20% 首次盈利目标",
+        "trailing_profit_stop": "ATR 移动盈利保护",
+        "confirmed_trend_breakdown": "均线与多因子趋势转弱",
+    }.get(reason_code, reason_code)
 
 
 def _currency_for_market(market: Market) -> str:

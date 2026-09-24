@@ -9,8 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ai_trading_agent.domain.ability.factors import FactorMetadata
 from ai_trading_agent.domain.aggregate.ai_simulation import AiSimulationOverview
-from ai_trading_agent.domain.aggregate.closing_plan import ClosingPlan
 from ai_trading_agent.domain.aggregate.candidate import RankedCandidate
+from ai_trading_agent.domain.aggregate.closing_plan import ClosingPlan
 from ai_trading_agent.domain.aggregate.discipline import TradingDiscipline
 from ai_trading_agent.domain.aggregate.discipline_decision import DisciplineDecision
 from ai_trading_agent.domain.aggregate.market import Quote
@@ -35,6 +35,11 @@ from ai_trading_agent.domain.enums.research import (
     WatchlistAnalysisStatus,
 )
 from ai_trading_agent.domain.enums.technical import BarTimeframe
+from ai_trading_agent.domain.service.simulation_exit import (
+    FIRST_PROFIT_TARGET_PERCENT,
+    HARD_STOP_LOSS_PERCENT,
+    HUNDRED,
+)
 
 DEFAULT_NEWS_SOURCES = ("eastmoney", "sina")
 
@@ -717,6 +722,11 @@ class AiSimulationPositionResponse(BaseModel):
     factor_context: list[str]
     rationale: list[str]
     opened_at: str
+    highest_price: Decimal
+    profit_take_stage: int
+    hard_stop_price: Decimal
+    first_profit_target_price: Decimal
+    trailing_stop_price: Decimal | None
     last_price: Decimal | None
     market_value: Decimal | None
     unrealized_pnl: Decimal | None
@@ -834,6 +844,13 @@ class AiSimulationOverviewResponse(BaseModel):
                     factor_context=list(item.position.factor_context),
                     rationale=list(item.position.rationale),
                     opened_at=item.position.opened_at.isoformat(),
+                    highest_price=item.position.highest_price,
+                    profit_take_stage=item.position.profit_take_stage,
+                    hard_stop_price=item.position.average_cost
+                    * (Decimal("1") - HARD_STOP_LOSS_PERCENT / HUNDRED),
+                    first_profit_target_price=item.position.average_cost
+                    * (Decimal("1") + FIRST_PROFIT_TARGET_PERCENT / HUNDRED),
+                    trailing_stop_price=item.position.trailing_stop_price,
                     last_price=item.last_price,
                     market_value=item.market_value,
                     unrealized_pnl=item.unrealized_pnl,
