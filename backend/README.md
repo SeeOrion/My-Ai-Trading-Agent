@@ -26,6 +26,12 @@ key is kept in its user-level private credential store outside this repository;
 never add it to this project `.env` or a deployment manifest. Tencent and
 AKShare are research/display sources only and are never execution prices.
 
+The bounded candidate screen retries transient Tencent transport failures with
+configured exponential backoff. If Tencent still fails, A shares fall back to
+Hithink Finance and then Futu; Hong Kong and US candidates fall back to Futu.
+This is a fixed research universe rather than an exchange-wide scan, and the
+API reports the provider that actually supplied the observations.
+
 `HITHINK_FINANCE_TIMEOUT_SECONDS` is the only Hithink setting shown in
 `.env.example`. Configure the API Key through the `hithink-finance` Skill's
 system-level private credential flow, not through a project file or Git.

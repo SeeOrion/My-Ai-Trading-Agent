@@ -244,6 +244,18 @@ Tushare 日线（明确标记为日终/非实时）
 
 实现位置：`interfaces/facade/research_workspace.py` + `application/a_share_quote_failover.py`。
 
+### 候选股样本池降级链路
+
+```text
+A 股：腾讯公开行情（有界重试） → Hithink Finance → Futu OpenD
+港/美股：腾讯公开行情（有界重试） → Futu OpenD
+```
+
+这条链路只用于 `GET /api/v1/market/candidates` 的预设高流动性研究样本，不是全市场扫描。
+样本统一定义在 `application/candidates.py`，腾讯、同花顺和 Futu 不得各自复制一份。当前默认重试
+为 3 次，可通过 `TENCENT_QUOTE_MAX_ATTEMPTS` 和 `TENCENT_QUOTE_RETRY_BASE_DELAY_SECONDS` 调整；结果的
+`source` 必须是实际成功供应商。编排入口在 `interfaces/facade/research_workspace.py::_candidate_provider()`。
+
 ### 基金/ETF 代码与数据语义（高频踩坑）
 
 | 类型 | UI 市场 | `instrument_type` | 合法/规范化代码例 | 数据语义 |
@@ -361,4 +373,4 @@ Tushare 日线（明确标记为日终/非实时）
 
 ---
 
-最后更新：2026-09-20。此文件描述的是当前已实现状态；新增功能时请同时更新本文件的目录、能力、数据源、API、迁移和限制说明。
+最后更新：2026-09-24。此文件描述的是当前已实现状态；新增功能时请同时更新本文件的目录、能力、数据源、API、迁移和限制说明。
