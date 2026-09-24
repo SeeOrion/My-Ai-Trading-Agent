@@ -85,20 +85,6 @@ class FutuMarketDataProvider:
     def _ensure_gateway_is_reachable(self) -> None:
         ensure_futu_gateway_is_reachable(self._settings)
 
-
-def ensure_futu_gateway_is_reachable(settings: FutuSettings) -> None:
-    """Fail fast before the synchronous Futu SDK can start its own reconnect loop."""
-    try:
-        with socket.create_connection(
-            (settings.host, settings.port), timeout=settings.connect_timeout_seconds
-        ):
-            return
-    except OSError as error:
-        raise FutuProviderError(
-            "OpenD is unreachable at "
-            f"{settings.host}:{settings.port}; start OpenD or check its address"
-        ) from error
-
     @staticmethod
     def _to_quote(instrument: Instrument, row: object) -> Quote:
         # Pandas Series supports bracket indexing; keeping the boundary local
@@ -117,6 +103,20 @@ def ensure_futu_gateway_is_reachable(settings: FutuSettings) -> None:
             previous_close=_optional_decimal(row.get("prev_close_price"), "prev_close_price"),
             volume=_optional_decimal(row.get("volume"), "volume"),
         )
+
+
+def ensure_futu_gateway_is_reachable(settings: FutuSettings) -> None:
+    """Fail fast before the synchronous Futu SDK can start its own reconnect loop."""
+    try:
+        with socket.create_connection(
+            (settings.host, settings.port), timeout=settings.connect_timeout_seconds
+        ):
+            return
+    except OSError as error:
+        raise FutuProviderError(
+            "OpenD is unreachable at "
+            f"{settings.host}:{settings.port}; start OpenD or check its address"
+        ) from error
 
 
 class FutuSymbolMapper:

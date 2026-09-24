@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -54,6 +55,30 @@ def test_us_quote_timestamp_is_normalized_to_utc() -> None:
     parsed = _parse_futu_observed_at("2026-09-02", "09:30:00", Market.UNITED_STATES)
 
     assert parsed == datetime(2026, 9, 2, 13, 30, tzinfo=UTC)
+
+
+def test_futu_snapshot_is_mapped_to_provider_neutral_quote() -> None:
+    instrument = Instrument("00700", Market.HONG_KONG)
+
+    quote = FutuMarketDataProvider._to_quote(
+        instrument,
+        {
+            "data_date": "2026-09-24",
+            "data_time": "16:00:00",
+            "last_price": "500.20",
+            "open_price": "495.00",
+            "high_price": "505.00",
+            "low_price": "490.00",
+            "prev_close_price": "492.00",
+            "volume": "12345",
+        },
+    )
+
+    assert quote.instrument == instrument
+    assert quote.last_price == Decimal("500.20")
+    assert quote.previous_close == Decimal("492.00")
+    assert quote.volume == Decimal("12345")
+    assert quote.source == "futu"
 
 
 def test_futu_rejects_an_unreachable_opend_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
