@@ -47,11 +47,20 @@ class AiSimulationPosition:
     candidate_score: Decimal
     factor_context: tuple[str, ...]
     rationale: tuple[str, ...]
+    highest_price: Decimal
+    profit_take_stage: int = 0
+    trailing_stop_price: Decimal | None = None
     status: str = "open"
 
     def __post_init__(self) -> None:
         if self.quantity <= 0 or self.average_cost <= 0:
             raise ValueError("simulation position quantity and average_cost must be positive")
+        if self.highest_price <= 0:
+            raise ValueError("simulation position highest_price must be positive")
+        if self.profit_take_stage not in {0, 1}:
+            raise ValueError("simulation position profit_take_stage must be 0 or 1")
+        if self.trailing_stop_price is not None and self.trailing_stop_price <= 0:
+            raise ValueError("simulation position trailing_stop_price must be positive")
         if not Decimal("0") <= self.candidate_score <= Decimal("100"):
             raise ValueError("candidate_score must be between 0 and 100")
         if not self.factor_context or not self.rationale:

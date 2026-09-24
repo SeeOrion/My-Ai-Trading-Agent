@@ -149,6 +149,9 @@ class AiSimulationPositionRecord(Base, TimestampedRecord):
     candidate_score: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=False)
     factor_context: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     rationale: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    highest_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    profit_take_stage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    trailing_stop_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
 
 

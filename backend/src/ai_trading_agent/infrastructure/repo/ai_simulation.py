@@ -104,6 +104,9 @@ class SqlAlchemyAiSimulationRepository:
             record.candidate_score = position.candidate_score
             record.factor_context = list(position.factor_context)
             record.rationale = list(position.rationale)
+            record.highest_price = position.highest_price
+            record.profit_take_stage = position.profit_take_stage
+            record.trailing_stop_price = position.trailing_stop_price
             record.status = position.status
             await session.commit()
             await session.refresh(record)
@@ -204,6 +207,11 @@ def _position(record: AiSimulationPositionRecord) -> AiSimulationPosition:
         candidate_score=Decimal(str(record.candidate_score)),
         factor_context=tuple(str(item) for item in record.factor_context),
         rationale=tuple(str(item) for item in record.rationale),
+        highest_price=Decimal(str(record.highest_price)),
+        profit_take_stage=record.profit_take_stage,
+        trailing_stop_price=(
+            None if record.trailing_stop_price is None else Decimal(str(record.trailing_stop_price))
+        ),
         status=record.status,
     )
 
