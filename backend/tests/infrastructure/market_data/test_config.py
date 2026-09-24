@@ -9,6 +9,7 @@ from ai_trading_agent.infrastructure.config.providers import (
     FutuSettings,
     HithinkFinanceSettings,
     ProviderConfigurationError,
+    TencentQuoteSettings,
     TushareSettings,
 )
 
@@ -47,6 +48,16 @@ def test_a_share_failover_settings_read_environment(monkeypatch: pytest.MonkeyPa
     assert AShareQuoteFailoverSettings.from_environment() == AShareQuoteFailoverSettings(
         futu_timeout_seconds=3.5,
         futu_cooldown_seconds=90,
+    )
+
+
+def test_tencent_retry_settings_are_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TENCENT_QUOTE_MAX_ATTEMPTS", "4")
+    monkeypatch.setenv("TENCENT_QUOTE_RETRY_BASE_DELAY_SECONDS", "0.2")
+
+    assert TencentQuoteSettings.from_environment() == TencentQuoteSettings(
+        max_attempts=4,
+        retry_base_delay_seconds=0.2,
     )
 
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+from ai_trading_agent.application.candidates import research_universe
 from ai_trading_agent.domain.aggregate.candidate import CandidateObservation
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.enums.market import Market
@@ -21,6 +23,7 @@ class TencentQuoteProviderError(RuntimeError):
 
 
 ResponseFetcher = Callable[[str, float], bytes]
+Sleeper = Callable[[float], None]
 
 
 class TencentQuoteMarketDataProvider:
@@ -37,9 +40,11 @@ class TencentQuoteMarketDataProvider:
         settings: TencentQuoteSettings,
         *,
         response_fetcher: ResponseFetcher | None = None,
+        sleeper: Sleeper = time.sleep,
     ) -> None:
         self._settings = settings
         self._response_fetcher = response_fetcher or _download_quote_payload
+        self._sleeper = sleeper
 
     def supports(self, market: Market) -> bool:
         return market in {Market.A_SHARE, Market.HONG_KONG, Market.UNITED_STATES}
@@ -58,18 +63,13 @@ class TencentQuoteMarketDataProvider:
         """Read one documented liquid-stock research universe for a market."""
         if not self.supports(market):
             raise TencentQuoteProviderError(f"unsupported market: {market.value}")
-        instruments = [Instrument(symbol, market) for symbol in _RESEARCH_UNIVERSES[market]]
+        instruments = list(research_universe(market))
         return await asyncio.to_thread(self._get_candidate_observations_sync, instruments)
 
     def _get_latest_quotes_sync(self, instruments: list[Instrument]) -> list[Quote]:
         codes = [_to_provider_code(instrument) for instrument in instruments]
         url = f"https://qt.gtimg.cn/q={','.join(codes)}"
-        try:
-            payload = self._response_fetcher(url, self._settings.timeout_seconds).decode(
-                "gbk", errors="replace"
-            )
-        except Exception as error:
-            raise TencentQuoteProviderError(f"quote query failed: {error}") from error
+        payload = self._fetch_payload(url)
         rows_by_code = _parse_payload(payload)
         quotes: list[Quote] = []
         for instrument, code in zip(instruments, codes, strict=True):
@@ -84,12 +84,7 @@ class TencentQuoteMarketDataProvider:
     ) -> list[CandidateObservation]:
         codes = [_to_provider_code(instrument) for instrument in instruments]
         url = f"https://qt.gtimg.cn/q={','.join(codes)}"
-        try:
-            payload = self._response_fetcher(url, self._settings.timeout_seconds).decode(
-                "gbk", errors="replace"
-            )
-        except Exception as error:
-            raise TencentQuoteProviderError(f"quote query failed: {error}") from error
+        payload = self._fetch_payload(url)
         rows_by_code = _parse_payload(payload)
         observations: list[CandidateObservation] = []
         for instrument, code in zip(instruments, codes, strict=True):
@@ -118,6 +113,23 @@ class TencentQuoteMarketDataProvider:
                 "public quote response did not contain usable candidates"
             )
         return observations
+
+    def _fetch_payload(self, url: str) -> str:
+        last_error: Exception | None = None
+        for attempt in range(1, self._settings.max_attempts + 1):
+            try:
+                return self._response_fetcher(url, self._settings.timeout_seconds).decode(
+                    "gbk", errors="replace"
+                )
+            except Exception as error:
+                last_error = error
+                if attempt < self._settings.max_attempts:
+                    self._sleeper(
+                        self._settings.retry_base_delay_seconds * (2 ** (attempt - 1))
+                    )
+        raise TencentQuoteProviderError(
+            f"quote query failed after {self._settings.max_attempts} attempts: {last_error}"
+        ) from last_error
 
 
 def _download_quote_payload(url: str, timeout_seconds: float) -> bytes:
@@ -215,24 +227,3 @@ def _decimal(value: str, label: str) -> Decimal:
     if not result.is_finite() or result < 0:
         raise TencentQuoteProviderError(f"invalid {label}: {value!r}")
     return result
-
-
-# A bounded, liquid research universe keeps public endpoint usage predictable.
-# It is explicitly not an exchange-wide scan and contains equities only.
-_RESEARCH_UNIVERSES: dict[Market, tuple[str, ...]] = {
-    Market.A_SHARE: (
-        "600519", "300750", "000001", "600036", "000858", "601318", "600900", "601888",
-        "000333", "002594", "600276", "601012", "600030", "601166", "000725", "002475",
-        "600309", "600809", "000063", "601398", "600031", "002371", "000651", "601668",
-    ),
-    Market.HONG_KONG: (
-        "00700", "09988", "03690", "01810", "00005", "00941", "01299", "02318", "00939",
-        "01398", "03988", "00883", "02628", "02020", "09618", "09888", "06618", "01024",
-        "01093", "00388", "01177", "02331", "00175", "00669", "00857", "0016", "01928",
-    ),
-    Market.UNITED_STATES: (
-        "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO", "NFLX", "AMD",
-        "CRM", "ORCL", "JPM", "V", "MA", "WMT", "COST", "LLY", "XOM", "JNJ", "PLTR",
-        "CSCO", "IBM", "ADBE", "QCOM", "INTC", "GE", "BAC", "HD", "KO",
-    ),
-}

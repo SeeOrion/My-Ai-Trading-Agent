@@ -114,6 +114,8 @@ class TencentQuoteSettings:
     """No-credential controls for the experimental public quote fallback."""
 
     timeout_seconds: float = 5.0
+    max_attempts: int = 3
+    retry_base_delay_seconds: float = 0.4
 
     @classmethod
     def from_environment(cls) -> TencentQuoteSettings:
@@ -121,7 +123,17 @@ class TencentQuoteSettings:
             timeout_seconds=_positive_float(
                 os.environ.get("TENCENT_QUOTE_TIMEOUT_SECONDS", "5").strip(),
                 "TENCENT_QUOTE_TIMEOUT_SECONDS",
-            )
+            ),
+            max_attempts=_bounded_int(
+                os.environ.get("TENCENT_QUOTE_MAX_ATTEMPTS", "3").strip(),
+                "TENCENT_QUOTE_MAX_ATTEMPTS",
+                minimum=1,
+                maximum=5,
+            ),
+            retry_base_delay_seconds=_positive_float(
+                os.environ.get("TENCENT_QUOTE_RETRY_BASE_DELAY_SECONDS", "0.4").strip(),
+                "TENCENT_QUOTE_RETRY_BASE_DELAY_SECONDS",
+            ),
         )
 
 

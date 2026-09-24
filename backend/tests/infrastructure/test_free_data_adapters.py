@@ -61,6 +61,35 @@ async def test_tencent_adapter_normalizes_hong_kong_and_us_quotes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tencent_adapter_retries_transient_transport_failures() -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def fetcher(url: str, timeout: float) -> bytes:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise OSError("temporary DNS failure")
+        return (
+            'v_sh600519="51~贵州茅台~600519~1330.00~1298.88~1295.88~45415~0~0'
+            '~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~20260904150000'
+            '~0~0~1338.86~1295.60";'
+        ).encode("gbk")
+
+    provider = TencentQuoteMarketDataProvider(
+        TencentQuoteSettings(max_attempts=3, retry_base_delay_seconds=0.25),
+        response_fetcher=fetcher,
+        sleeper=delays.append,
+    )
+
+    quotes = await provider.get_latest_quotes([Instrument("600519.SH", Market.A_SHARE)])
+
+    assert quotes[0].last_price == Decimal("1330.00")
+    assert attempts == 3
+    assert delays == [0.25, 0.5]
+
+
+@pytest.mark.asyncio
 async def test_akshare_news_adapter_keeps_recent_source_attribution() -> None:
     now = datetime.now(UTC)
     provider = AkshareNewsProvider(

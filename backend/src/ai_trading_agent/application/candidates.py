@@ -6,8 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from ai_trading_agent.application.ports import MarketCandidateProvider
+from ai_trading_agent.application.ports import MarketCandidateProvider, MarketDataProvider
 from ai_trading_agent.domain.aggregate.candidate import CandidateObservation, RankedCandidate
+from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.domain.enums.candidates import CandidateRanking
 from ai_trading_agent.domain.enums.market import Market
 
@@ -48,6 +49,73 @@ class RankMarketCandidatesHandler:
             candidates=tuple(ranked[: query.limit]),
             universe_size=len(observations),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class FailoverMarketCandidateProvider:
+    """Use the first source that returns a non-empty bounded candidate universe."""
+
+    providers: tuple[MarketCandidateProvider, ...]
+    name: str = "candidate_failover"
+
+    async def get_candidate_observations(self, market: Market) -> list[CandidateObservation]:
+        errors: list[str] = []
+        for provider in self.providers:
+            try:
+                observations = await provider.get_candidate_observations(market)
+            except Exception as error:
+                errors.append(f"{provider.name}: {error}")
+                continue
+            if observations:
+                return observations
+            errors.append(f"{provider.name}: candidate universe is empty")
+        raise RuntimeError("; ".join(errors) or "no candidate provider is configured")
+
+
+@dataclass(frozen=True, slots=True)
+class QuoteUniverseCandidateProvider:
+    """Adapt provider-neutral quotes for the shared bounded research universe."""
+
+    quote_provider: MarketDataProvider
+
+    @property
+    def name(self) -> str:
+        return f"{self.quote_provider.name}_candidate_universe"
+
+    async def get_candidate_observations(self, market: Market) -> list[CandidateObservation]:
+        if not self.quote_provider.supports(market):
+            raise RuntimeError(f"{self.quote_provider.name} does not support {market.value}")
+        quotes = await self.quote_provider.get_latest_quotes(research_universe(market))
+        return [_observation_from_quote(quote) for quote in quotes]
+
+
+def research_universe(market: Market) -> tuple[Instrument, ...]:
+    symbols = _RESEARCH_UNIVERSES.get(market, ())
+    if not symbols:
+        raise ValueError(f"no bounded candidate universe for market: {market.value}")
+    return tuple(Instrument(symbol, market) for symbol in symbols)
+
+
+def _observation_from_quote(quote: Quote) -> CandidateObservation:
+    previous_close = quote.previous_close
+    change_percent = (
+        None
+        if previous_close in {None, Decimal("0")}
+        else (quote.last_price - previous_close) * Decimal("100") / previous_close
+    )
+    return CandidateObservation(
+        instrument=quote.instrument,
+        name=quote.instrument.symbol,
+        last_price=quote.last_price,
+        change_percent=change_percent,
+        # Not every quote source exposes turnover. Volume is still a valid
+        # within-source activity percentile and is never compared across sources.
+        turnover=quote.volume,
+        high_price=quote.high_price,
+        low_price=quote.low_price,
+        observed_at=quote.observed_at,
+        source=quote.source,
+    )
 
 
 def _rank(
@@ -135,3 +203,96 @@ def _reasons(
         f"成交活跃度位于样本池约第 {activity_score:.0f} 百分位",
         f"日内价格位置平衡度 {balance_score:.0f}/100；趋势强度 {momentum_score:.0f}/100",
     )
+
+
+# All candidate adapters share this bounded liquid-stock universe. It is not an
+# exchange-wide scan, so a provider outage never expands workload unexpectedly.
+_RESEARCH_UNIVERSES: dict[Market, tuple[str, ...]] = {
+    Market.A_SHARE: (
+        "600519",
+        "300750",
+        "000001",
+        "600036",
+        "000858",
+        "601318",
+        "600900",
+        "601888",
+        "000333",
+        "002594",
+        "600276",
+        "601012",
+        "600030",
+        "601166",
+        "000725",
+        "002475",
+        "600309",
+        "600809",
+        "000063",
+        "601398",
+        "600031",
+        "002371",
+        "000651",
+        "601668",
+    ),
+    Market.HONG_KONG: (
+        "00700",
+        "09988",
+        "03690",
+        "01810",
+        "00005",
+        "00941",
+        "01299",
+        "02318",
+        "00939",
+        "01398",
+        "03988",
+        "00883",
+        "02628",
+        "02020",
+        "09618",
+        "09888",
+        "06618",
+        "01024",
+        "01093",
+        "00388",
+        "01177",
+        "02331",
+        "00175",
+        "00669",
+        "00857",
+        "0016",
+        "01928",
+    ),
+    Market.UNITED_STATES: (
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "AVGO",
+        "NFLX",
+        "AMD",
+        "CRM",
+        "ORCL",
+        "JPM",
+        "V",
+        "MA",
+        "WMT",
+        "COST",
+        "LLY",
+        "XOM",
+        "JNJ",
+        "PLTR",
+        "CSCO",
+        "IBM",
+        "ADBE",
+        "QCOM",
+        "INTC",
+        "GE",
+        "BAC",
+        "HD",
+        "KO",
+    ),
+}

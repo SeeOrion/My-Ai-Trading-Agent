@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -14,6 +15,8 @@ from ai_trading_agent.application.a_share_quote_failover import (
 )
 from ai_trading_agent.application.candidates import (
     CandidateScreen,
+    FailoverMarketCandidateProvider,
+    QuoteUniverseCandidateProvider,
     RankMarketCandidates,
     RankMarketCandidatesHandler,
 )
@@ -24,7 +27,7 @@ from ai_trading_agent.application.market_scans import (
     RunMarketScanHandler,
 )
 from ai_trading_agent.application.news import ResilientLatestNewsHandler
-from ai_trading_agent.application.ports import MarketDataProvider
+from ai_trading_agent.application.ports import MarketCandidateProvider, MarketDataProvider
 from ai_trading_agent.application.research import (
     AnalyzeCapitalFlowHandler,
     AnalyzeFundamentalsHandler,
@@ -83,6 +86,7 @@ from ai_trading_agent.infrastructure.rpc.tushare_market import TushareMarketData
 from ai_trading_agent.infrastructure.rpc.tushare_research import TushareResearchProvider
 from ai_trading_agent.infrastructure.rpc.tushare_scanner import TushareMarketScanner
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
+from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.model.http import (
     NewsItemResponse,
@@ -223,12 +227,60 @@ async def today_candidates(
     if not refresh and cached is not None and now - cached[0] < _CANDIDATE_CACHE_TTL:
         return cached[1], cached[0]
 
-    provider = TencentQuoteMarketDataProvider(TencentQuoteSettings.from_environment())
+    provider = _candidate_provider(market)
     screen = await RankMarketCandidatesHandler(provider).handle(
         RankMarketCandidates(market=market, ranking=ranking)
     )
+    screen = await _enrich_candidate_names(screen, market)
     _candidate_screen_cache[key] = (screen, now)
     return screen, now
+
+
+def _candidate_provider(market: Market) -> MarketCandidateProvider:
+    providers: list[MarketCandidateProvider] = [
+        TencentQuoteMarketDataProvider(TencentQuoteSettings.from_environment())
+    ]
+    if market is Market.A_SHARE:
+        try:
+            providers.append(
+                QuoteUniverseCandidateProvider(
+                    HithinkFinanceMarketDataProvider(
+                        HithinkFinanceSettings.from_environment()
+                    )
+                )
+            )
+        except ProviderConfigurationError:
+            pass
+    try:
+        providers.append(
+            QuoteUniverseCandidateProvider(FutuMarketDataProvider(FutuSettings.from_environment()))
+        )
+    except ProviderConfigurationError:
+        pass
+    return FailoverMarketCandidateProvider(tuple(providers))
+
+
+async def _enrich_candidate_names(
+    screen: CandidateScreen, market: Market
+) -> CandidateScreen:
+    if market is not Market.A_SHARE:
+        return screen
+    candidates = []
+    for candidate in screen.candidates:
+        observation = candidate.observation
+        if observation.name != observation.instrument.symbol:
+            candidates.append(candidate)
+            continue
+        try:
+            identity = await resolve_instrument_identity(observation.instrument)
+        except Exception:
+            identity = None
+        candidates.append(
+            candidate
+            if identity is None
+            else replace(candidate, observation=replace(observation, name=identity.display_name))
+        )
+    return CandidateScreen(candidates=tuple(candidates), universe_size=screen.universe_size)
 
 
 async def run_market_scan(

@@ -37,15 +37,15 @@ from ai_trading_agent.interfaces.facade.ai_simulation import (
     run_scheduled_ai_simulations,
     update_ai_simulation_settings,
 )
-from ai_trading_agent.interfaces.facade.disciplines import (
-    discipline_from_input,
-    discipline_repository,
-    get_discipline,
-)
 from ai_trading_agent.interfaces.facade.closing_plan import (
     closing_plan,
     refresh_closing_plan,
     refresh_closing_window_analyses,
+)
+from ai_trading_agent.interfaces.facade.disciplines import (
+    discipline_from_input,
+    discipline_repository,
+    get_discipline,
 )
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.market_assistant import answer_market_question
@@ -266,15 +266,19 @@ def create_app(
     ) -> CandidateScreenResponse:
         try:
             screen, refreshed_at = await today_candidates(market, ranking, refresh=refresh)
+            sources = tuple(
+                dict.fromkeys(item.observation.source for item in screen.candidates)
+            )
             return CandidateScreenResponse(
                 market=market,
                 ranking=ranking,
                 candidates=[CandidateResponse.from_domain(item) for item in screen.candidates],
                 universe_size=screen.universe_size,
                 refreshed_at=refreshed_at.isoformat(),
-                source="tencent_public",
+                source=" + ".join(sources),
                 coverage=(
-                    "已筛选腾讯公开行情中的预设高流动性股票研究样本，"
+                    "已筛选预设高流动性股票研究样本；腾讯失败时，"
+                    "A 股自动降级至同花顺/Futu，港美股自动降级至 Futu。"
                     "并非全市场扫描；不包含逐股基本面、资金流、期权或关联新闻。"
                 ),
                 disclaimer="候选仅用于研究与复核，不构成买入、卖出或自动交易指令。",
