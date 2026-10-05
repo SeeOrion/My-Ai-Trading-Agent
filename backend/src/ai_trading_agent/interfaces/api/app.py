@@ -161,7 +161,7 @@ def create_app(
             scheduler = RecurringTaskScheduler(
                 lambda: run_scheduled_ai_simulations(
                     application,
-                    weekdays_only=ai_settings.weekdays_only,
+                    trading_days_only=ai_settings.trading_days_only,
                     market_hours_only=ai_settings.market_hours_only,
                     run_timeout_seconds=ai_settings.run_timeout_seconds,
                 ),

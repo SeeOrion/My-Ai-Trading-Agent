@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
-from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
 from ai_trading_agent.application.strategies import ListStrategiesHandler
+from ai_trading_agent.domain.ability.trading_calendar import TradingCalendarPort
 from ai_trading_agent.domain.aggregate.ai_simulation import (
     AiSimulationDecisionReport,
     AiSimulationOverview,
@@ -46,6 +46,7 @@ from ai_trading_agent.domain.service.simulation_exit import (
     SimulationExitEvidence,
     evaluate_simulation_exit,
 )
+from ai_trading_agent.infrastructure.market_data.exchange_calendar import ExchangeTradingCalendar
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
 from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
@@ -294,21 +295,23 @@ async def ai_simulation_runs(
 async def run_scheduled_ai_simulations(
     app: FastAPI,
     *,
-    weekdays_only: bool = True,
+    trading_days_only: bool = True,
     market_hours_only: bool = True,
     run_timeout_seconds: int = 480,
     observed_at: datetime | None = None,
+    trading_calendar: TradingCalendarPort | None = None,
 ) -> None:
-    """Run existing accounts only in each market's weekday trading sessions."""
+    """Run existing accounts only in each exchange's published trading sessions."""
     run_at = observed_at or datetime.now(UTC)
     if run_timeout_seconds <= 0:
         raise ValueError("run_timeout_seconds must be positive")
-    if weekdays_only and not _is_weekday(run_at):
-        return
+    calendar = trading_calendar or ExchangeTradingCalendar()
     repository = ai_simulation_repository(app)
     for portfolio in await repository.list_active():
         market = Market(portfolio.market)
-        if market_hours_only and not _is_market_open(market, run_at):
+        if trading_days_only and not calendar.is_trading_day(market, run_at):
+            continue
+        if market_hours_only and not calendar.is_open(market, run_at):
             continue
         started_at = datetime.now(UTC)
         try:
@@ -366,32 +369,6 @@ async def _save_failed_scheduled_run(
     except Exception:
         # A database outage must not prevent the next account or next day from running.
         return
-
-
-def _is_weekday(observed_at: datetime) -> bool:
-    """Use the server's local calendar so the daily job stays quiet on weekends."""
-    return observed_at.weekday() < 5
-
-
-def _is_market_open(market: Market, observed_at: datetime) -> bool:
-    """Check regular sessions in the market's local timezone, including US DST."""
-    timezone, sessions = {
-        Market.A_SHARE: (
-            "Asia/Shanghai",
-            ((time(9, 30), time(11, 30)), (time(13, 0), time(15, 0))),
-        ),
-        Market.HONG_KONG: (
-            "Asia/Hong_Kong",
-            ((time(9, 30), time(12, 0)), (time(13, 0), time(16, 0))),
-        ),
-        Market.UNITED_STATES: ("America/New_York", ((time(9, 30), time(16, 0)),)),
-    }.get(market, ("UTC", ()))
-    instant = observed_at if observed_at.tzinfo is not None else observed_at.replace(tzinfo=UTC)
-    local_now = instant.astimezone(ZoneInfo(timezone))
-    if not _is_weekday(local_now):
-        return False
-    local_time = local_now.time().replace(tzinfo=None)
-    return any(start <= local_time < end for start, end in sessions)
 
 
 async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:

@@ -69,6 +69,24 @@ def test_ai_simulation_scheduler_reads_bounded_run_timeout(
     assert AiSimulationSchedulerSettings.from_environment().run_timeout_seconds == 420
 
 
+def test_ai_simulation_scheduler_prefers_exchange_trading_day_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AI_SIMULATION_WEEKDAYS_ONLY", "false")
+    monkeypatch.setenv("AI_SIMULATION_TRADING_DAYS_ONLY", "true")
+
+    assert AiSimulationSchedulerSettings.from_environment().trading_days_only
+
+
+def test_ai_simulation_scheduler_accepts_legacy_weekday_setting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("AI_SIMULATION_TRADING_DAYS_ONLY", raising=False)
+    monkeypatch.setenv("AI_SIMULATION_WEEKDAYS_ONLY", "false")
+
+    assert not AiSimulationSchedulerSettings.from_environment().trading_days_only
+
+
 def test_closing_plan_scheduler_reads_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLOSING_PLAN_INTERVAL_SECONDS", "600")
 

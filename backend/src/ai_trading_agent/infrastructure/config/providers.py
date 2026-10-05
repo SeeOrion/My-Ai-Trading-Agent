@@ -254,7 +254,7 @@ class AiSimulationSchedulerSettings:
     scheduler_enabled: bool = True
     interval_seconds: int = 600
     run_timeout_seconds: int = 480
-    weekdays_only: bool = True
+    trading_days_only: bool = True
     market_hours_only: bool = True
 
     @classmethod
@@ -266,11 +266,14 @@ class AiSimulationSchedulerSettings:
             raise ProviderConfigurationError(
                 "AI_SIMULATION_SCHEDULER_ENABLED must be true or false"
             )
-        raw_weekdays_only = os.environ.get(
-            "AI_SIMULATION_WEEKDAYS_ONLY", "true"
+        raw_trading_days_only = os.environ.get(
+            "AI_SIMULATION_TRADING_DAYS_ONLY",
+            os.environ.get("AI_SIMULATION_WEEKDAYS_ONLY", "true"),
         ).strip().lower()
-        if raw_weekdays_only not in {"true", "false"}:
-            raise ProviderConfigurationError("AI_SIMULATION_WEEKDAYS_ONLY must be true or false")
+        if raw_trading_days_only not in {"true", "false"}:
+            raise ProviderConfigurationError(
+                "AI_SIMULATION_TRADING_DAYS_ONLY must be true or false"
+            )
         raw_market_hours_only = os.environ.get(
             "AI_SIMULATION_MARKET_HOURS_ONLY", "true"
         ).strip().lower()
@@ -292,7 +295,7 @@ class AiSimulationSchedulerSettings:
                 minimum=30,
                 maximum=540,
             ),
-            weekdays_only=raw_weekdays_only == "true",
+            trading_days_only=raw_trading_days_only == "true",
             market_hours_only=raw_market_hours_only == "true",
         )
 

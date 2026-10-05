@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "SeeOrion" }]
-dependencies = []
+dependencies = [
+  "exchange-calendars>=4.11,<5",
+]
 
 [project.optional-dependencies]
 futu = ["futu-api>=9,<10"]
