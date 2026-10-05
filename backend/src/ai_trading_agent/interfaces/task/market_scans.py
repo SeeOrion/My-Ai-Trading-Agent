@@ -7,7 +7,6 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 
-
 _logger = logging.getLogger(__name__)
 
 
@@ -54,8 +53,13 @@ class RecurringTaskScheduler:
                 # traceback in the service log if setup fails before persistence.
                 _logger.exception("Recurring task callback failed; next cycle will continue")
             try:
+                wait_seconds = (
+                    self._seconds_until_next_boundary()
+                    if self._align_to_interval_boundary
+                    else self._interval_seconds
+                )
                 await asyncio.wait_for(
-                    self._stop_requested.wait(), timeout=self._interval_seconds
+                    self._stop_requested.wait(), timeout=wait_seconds
                 )
             except TimeoutError:
                 continue
@@ -64,6 +68,10 @@ class RecurringTaskScheduler:
         """Align periodic production jobs to a wall-clock interval when requested."""
         if not self._align_to_interval_boundary:
             return self._interval_seconds
+        return self._seconds_until_next_boundary()
+
+    def _seconds_until_next_boundary(self) -> float:
+        """Re-align after every callback so task duration cannot accumulate drift."""
         remainder = time.time() % self._interval_seconds
         delay = self._interval_seconds - remainder
         return self._interval_seconds if delay < 0.01 else delay
