@@ -105,7 +105,7 @@ def instrument_from_query(query: QuoteQuery) -> Instrument:
 
 _a_share_quote_failover: AShareQuoteFailover | None = None
 _candidate_screen_cache: dict[
-    tuple[Market, CandidateRanking], tuple[datetime, CandidateScreen]
+    tuple[Market, CandidateRanking, int], tuple[datetime, CandidateScreen]
 ] = {}
 _CANDIDATE_CACHE_TTL = timedelta(minutes=5)
 _news_collector = ResilientLatestNewsHandler(AkshareNewsProvider())
@@ -219,9 +219,10 @@ async def today_candidates(
     ranking: CandidateRanking,
     *,
     refresh: bool = False,
+    limit: int = 3,
 ) -> tuple[CandidateScreen, datetime]:
     """Return a short-lived public-data candidate screen for one market."""
-    key = (market, ranking)
+    key = (market, ranking, limit)
     now = datetime.now(UTC)
     cached = _candidate_screen_cache.get(key)
     if not refresh and cached is not None and now - cached[0] < _CANDIDATE_CACHE_TTL:
@@ -229,10 +230,10 @@ async def today_candidates(
 
     provider = _candidate_provider(market)
     screen = await RankMarketCandidatesHandler(provider).handle(
-        RankMarketCandidates(market=market, ranking=ranking)
+        RankMarketCandidates(market=market, ranking=ranking, limit=limit)
     )
     screen = await _enrich_candidate_names(screen, market)
-    _candidate_screen_cache[key] = (screen, now)
+    _candidate_screen_cache[key] = (now, screen)
     return screen, now
 
 
