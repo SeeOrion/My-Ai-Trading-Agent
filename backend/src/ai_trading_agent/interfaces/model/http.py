@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -709,6 +710,17 @@ class AiSimulationRunInput(BaseModel):
     strategy_ids: list[UUID] = Field(default_factory=list, max_length=8)
 
 
+class PositionExitPlanResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    stop_price: Decimal
+    target_price: Decimal
+    reviewed_at: datetime
+    action: str
+    basis: list[str]
+    data_notes: list[str]
+    version: str
+
+
 class AiSimulationPositionResponse(BaseModel):
     position_id: UUID
     symbol: str
@@ -727,6 +739,7 @@ class AiSimulationPositionResponse(BaseModel):
     hard_stop_price: Decimal
     first_profit_target_price: Decimal
     trailing_stop_price: Decimal | None
+    exit_plan: PositionExitPlanResponse | None = None
     last_price: Decimal | None
     market_value: Decimal | None
     unrealized_pnl: Decimal | None
@@ -846,11 +859,24 @@ class AiSimulationOverviewResponse(BaseModel):
                     opened_at=item.position.opened_at.isoformat(),
                     highest_price=item.position.highest_price,
                     profit_take_stage=item.position.profit_take_stage,
-                    hard_stop_price=item.position.average_cost
-                    * (Decimal("1") - HARD_STOP_LOSS_PERCENT / HUNDRED),
-                    first_profit_target_price=item.position.average_cost
-                    * (Decimal("1") + FIRST_PROFIT_TARGET_PERCENT / HUNDRED),
+                    hard_stop_price=(
+                        item.position.exit_plan.stop_price
+                        if item.position.exit_plan
+                        else item.position.average_cost
+                        * (Decimal("1") - HARD_STOP_LOSS_PERCENT / HUNDRED)
+                    ),
+                    first_profit_target_price=(
+                        item.position.exit_plan.target_price
+                        if item.position.exit_plan
+                        else item.position.average_cost
+                        * (Decimal("1") + FIRST_PROFIT_TARGET_PERCENT / HUNDRED)
+                    ),
                     trailing_stop_price=item.position.trailing_stop_price,
+                    exit_plan=(
+                        PositionExitPlanResponse.model_validate(item.position.exit_plan)
+                        if item.position.exit_plan
+                        else None
+                    ),
                     last_price=item.last_price,
                     market_value=item.market_value,
                     unrealized_pnl=item.unrealized_pnl,

@@ -33,6 +33,7 @@ from ai_trading_agent.interfaces.facade.ai_simulation import (
     AiSimulationRunRequest,
     ai_simulation_overview,
     ai_simulation_runs,
+    best_entry_candidates,
     run_ai_simulation,
     run_scheduled_ai_simulations,
     update_ai_simulation_settings,
@@ -254,6 +255,17 @@ def create_app(
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"市场问答暂不可用：{error}") from error
 
+    @app.get("/api/v1/market/best-entries", tags=["market"])
+    async def get_best_entries(market: Market) -> dict[str, object]:
+        try:
+            return await best_entry_candidates(app, market)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        except Exception as error:
+            raise HTTPException(
+                status_code=503, detail="候选数据复核暂不可用，请稍后重试。"
+            ) from error
+
     @app.get(
         "/api/v1/market/candidates",
         response_model=CandidateScreenResponse,
@@ -266,9 +278,7 @@ def create_app(
     ) -> CandidateScreenResponse:
         try:
             screen, refreshed_at = await today_candidates(market, ranking, refresh=refresh)
-            sources = tuple(
-                dict.fromkeys(item.observation.source for item in screen.candidates)
-            )
+            sources = tuple(dict.fromkeys(item.observation.source for item in screen.candidates))
             return CandidateScreenResponse(
                 market=market,
                 ranking=ranking,

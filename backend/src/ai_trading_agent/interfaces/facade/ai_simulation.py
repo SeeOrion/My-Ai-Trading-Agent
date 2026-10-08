@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI
 
@@ -45,6 +46,7 @@ from ai_trading_agent.domain.service.simulation_exit import (
     SimulationExitDecision,
     SimulationExitEvidence,
     evaluate_simulation_exit,
+    review_exit_plan,
 )
 from ai_trading_agent.infrastructure.market_data.exchange_calendar import ExchangeTradingCalendar
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
@@ -56,9 +58,11 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     builtin_factor_analysis,
     historical_bars_provider,
     latest_quote,
+    research,
     strategy_repository,
     today_candidates,
 )
+from ai_trading_agent.interfaces.model.http import ResearchRequest
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,13 +102,14 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
         portfolio = await _save_reconfigured_portfolio(
             repository, portfolio, positions, request, strategies
         )
+    held_at_start = {item.instrument.symbol for item in positions}
     portfolio, positions, discipline_notices = await _apply_position_exits(
         app, repository, portfolio, positions, strategies
     )
     screen, _ = await today_candidates(
-        request.market, CandidateRanking.BALANCED_ENTRY, refresh=True
+        request.market, CandidateRanking.BALANCED_ENTRY, refresh=True, limit=10
     )
-    existing_symbols = {item.instrument.symbol for item in positions}
+    existing_symbols = held_at_start | {item.instrument.symbol for item in positions}
     notices: list[str] = [
         "AI 模拟组合仅在预设高流动性研究样本中筛选，不是全市场扫描，也不会发送真实订单。",
         (
@@ -144,27 +149,9 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
                 )
             )
             continue
-        analysis = await builtin_factor_analysis(
-            candidate.observation.instrument,
-            financial_snapshot=None,
-            news_sentiment=None,
+        simulated_candidate, decision = await assess_entry_candidate(
+            app, candidate, portfolio, strategies, len(positions)
         )
-        simulated_candidate = _candidate_from_analysis(candidate, analysis, strategies)
-        decision = evaluate_simulated_entry(
-            simulated_candidate,
-            available_cash=portfolio.cash_balance,
-            initial_capital=portfolio.initial_capital,
-            open_position_count=len(positions),
-            max_positions=portfolio.max_positions,
-            max_position_percent=_max_position_percent(strategies),
-            lot_size=minimum_trade_unit(candidate.observation.instrument),
-        )
-        discipline_blockers = await _discipline_entry_blockers(app, candidate)
-        if discipline_blockers:
-            decision = AiSimulationEntryDecision(
-                allocation=None,
-                blockers=tuple(dict.fromkeys((*discipline_blockers, *decision.blockers))),
-            )
         decision_reports.append(_decision_report(simulated_candidate, decision))
         allocation = decision.allocation
         if allocation is None:
@@ -182,9 +169,29 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
             average_cost=execution.cash_required / allocation.quantity,
             opened_at=datetime.now(UTC),
             candidate_score=candidate.score,
-            factor_context=simulated_candidate.available_factor_ids,
+            factor_context=simulated_candidate.available_factor_ids
+            or ("因子暂缺，按已验证行情评估",),
             rationale=tuple((*allocation.rationale, *execution.rationale)),
             highest_price=execution.fill_price,
+        )
+        entry_evidence, entry_notes = await _automatic_exit_evidence(
+            position,
+            Quote(
+                instrument=position.instrument,
+                last_price=execution.fill_price,
+                observed_at=position.opened_at,
+                source=candidate.observation.source,
+            ),
+            strategies,
+        )
+        position = replace(
+            position,
+            exit_plan=review_exit_plan(
+                entry_evidence,
+                None,
+                position.opened_at,
+                data_notes=(() if entry_notes is None else (entry_notes,)),
+            ),
         )
         await repository.save_position(position)
         await repository.save_trade(
@@ -521,6 +528,118 @@ async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]
     return disciplined_entry_blockers(decisions)
 
 
+def _quote_is_current(quote: Quote, *, now: datetime | None = None) -> bool:
+    now = now or datetime.now(UTC)
+    age = (now - quote.observed_at).total_seconds()
+    return 0 <= age <= 1800
+
+
+async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
+    """One read-only gate shared by overview recommendations and simulated buys."""
+    observation = candidate.observation
+    analysis = await builtin_factor_analysis(
+        observation.instrument,
+        financial_snapshot=None,
+        news_sentiment=None,
+    )
+    simulated = _candidate_from_analysis(candidate, analysis, strategies)
+    decision = evaluate_simulated_entry(
+        simulated,
+        available_cash=portfolio.cash_balance,
+        initial_capital=portfolio.initial_capital,
+        open_position_count=count,
+        max_positions=portfolio.max_positions,
+        max_position_percent=_max_position_percent(strategies),
+        lot_size=minimum_trade_unit(observation.instrument),
+    )
+    blockers = await _discipline_entry_blockers(app, candidate)
+    quote = Quote(
+        instrument=observation.instrument,
+        last_price=observation.last_price,
+        observed_at=observation.observed_at,
+        source=observation.source,
+    )
+    if not _quote_is_current(quote):
+        blockers += ("行情超过 30 分钟或时间异常，等待最新可验证价格。",)
+    if blockers:
+        decision = AiSimulationEntryDecision(
+            None, tuple(dict.fromkeys((*blockers, *decision.blockers)))
+        )
+    return simulated, decision
+
+
+async def best_entry_candidates(app: FastAPI, market: Market) -> dict[str, object]:
+    """Preview the account's entry gate without creating an account or trade."""
+    if market is Market.FUND:
+        raise ValueError("今日股票候选仅支持 A 股、港股与美股。")
+    repository = ai_simulation_repository(app)
+    portfolio = await repository.get_active(market)
+    account_exists = portfolio is not None
+    if portfolio is None:
+        portfolio = AiSimulationPortfolio(
+            uuid4(),
+            market.value,
+            _currency_for_market(market),
+            Decimal("100000"),
+            Decimal("100000"),
+            3,
+        )
+    positions = (
+        await repository.list_open_positions(portfolio.portfolio_id) if account_exists else []
+    )
+    held = {item.instrument.symbol for item in positions}
+    strategies = await _select_strategies(app, market, portfolio.strategy_ids)
+    _ensure_requested_strategies(portfolio.strategy_ids, strategies)
+    screen, refreshed_at = await today_candidates(
+        market,
+        CandidateRanking.BALANCED_ENTRY,
+        limit=10,
+    )
+    semaphore = asyncio.Semaphore(2)
+
+    async def assess(candidate):
+        async with semaphore:
+            symbol = candidate.observation.instrument.symbol
+            if symbol in held:
+                return None, {"symbol": symbol, "reasons": ["已在模拟账户持有。"]}
+            try:
+                simulated, decision = await asyncio.wait_for(
+                    assess_entry_candidate(app, candidate, portfolio, strategies, len(positions)),
+                    timeout=45,
+                )
+            except Exception:
+                return None, {"symbol": symbol, "reasons": ["本次数据复核未完成，请稍后刷新。"]}
+            if decision.allocation is None:
+                return None, {"symbol": symbol, "reasons": list(decision.blockers)}
+            return {
+                "symbol": symbol,
+                "name": simulated.display_name,
+                "price": str(simulated.last_price),
+                "score": str(simulated.score),
+                "observed_at": candidate.observation.observed_at.isoformat(),
+                "source": candidate.observation.source,
+                "reasons": list(simulated.rationale),
+                "missing_factors": list(simulated.unavailable_factor_ids),
+                "supportive": simulated.supportive_factor_count,
+                "adverse": simulated.adverse_factor_count,
+            }, None
+
+    results = await asyncio.gather(*(assess(item) for item in screen.candidates))
+    return {
+        "market": market.value,
+        "refreshed_at": refreshed_at.isoformat(),
+        "candidates": [item for item, _ in results if item is not None][:3],
+        "excluded": [item for _, item in results if item is not None],
+        "universe_size": screen.universe_size,
+        "coverage": "预设研究样本中先排名、再复核前十名；最多展示三只达标股票。",
+        "account_basis": (
+            "使用该市场模拟账户的现金、持仓上限、所选策略及个人纪律；各候选独立评估。"
+            if account_exists
+            else "尚无模拟账户：按 10 万本金、最多三只和内置风险预算预览，仍遵守已启用纪律。"
+        ),
+    }
+
+
 async def _apply_position_exits(
     app: FastAPI,
     repository: SqlAlchemyAiSimulationRepository,
@@ -541,6 +660,38 @@ async def _apply_position_exits(
                 f"{position.instrument.symbol} 未取得可验证行情，"
                 "未执行任何模拟卖出；请在数据源恢复后再次复核。"
             )
+            continue
+        if not _quote_is_current(quote):
+            active_positions.append(position)
+            notices.append(f"{position.instrument.symbol} 行情时间已过期，本轮保留原退出计划。")
+            continue
+        evidence, evidence_notice = await _automatic_exit_evidence(position, quote, strategies)
+        plan = review_exit_plan(
+            evidence,
+            position.exit_plan,
+            datetime.now(UTC),
+            fresh_flow_out=evidence.fresh_flow_out,
+            data_notes=(() if evidence_notice is None else (evidence_notice,)),
+        )
+        position = replace(position, exit_plan=plan)
+        if evidence_notice:
+            notices.append(evidence_notice)
+        # A-share cash equities cannot sell shares bought on the same local date.
+        if (
+            position.instrument.market is Market.A_SHARE
+            and position.instrument.instrument_type.value == "equity"
+            and position.opened_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+            >= quote.observed_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
+        ):
+            position = replace(
+                position,
+                exit_plan=replace(
+                    plan,
+                    action="settlement_hold",
+                    basis=(*plan.basis, "A 股股票 T+1：当日买入仅更新计划。"),
+                ),
+            )
+            active_positions.append(await repository.save_position(position))
             continue
         decisions = await evaluate_active_disciplines(app, position.instrument, quote)
         exit_decision = next(
@@ -570,6 +721,14 @@ async def _apply_position_exits(
                 profit_take_stage=position.profit_take_stage,
                 trailing_stop_price=position.trailing_stop_price,
             )
+            position = replace(
+                position,
+                exit_plan=replace(
+                    plan,
+                    action=decision.action,
+                    basis=decision.rationale,
+                ),
+            )
             current_portfolio, updated_position, notice = await _execute_position_sale(
                 repository, current_portfolio, position, quote, decision
             )
@@ -579,14 +738,27 @@ async def _apply_position_exits(
             continue
 
         if decisions:
+            position = replace(
+                position,
+                exit_plan=replace(
+                    plan,
+                    action="discipline_hold",
+                    basis=(
+                        "已启用个人纪律；以下自动保护价格仅供复核，实际卖出以纪律条件为准。",
+                        *(
+                            f"纪律「{item.discipline.name}」：本轮未触发止盈或清仓"
+                            for item in decisions
+                        ),
+                    ),
+                ),
+            )
             updated_position = _position_with_exit_state(
                 position,
                 highest_price=max(position.highest_price, quote.last_price),
                 profit_take_stage=position.profit_take_stage,
                 trailing_stop_price=position.trailing_stop_price,
             )
-            if updated_position != position:
-                updated_position = await repository.save_position(updated_position)
+            updated_position = await repository.save_position(updated_position)
             if any(item.status is DisciplineDecisionStatus.ADD_CONDITION_MET for item in decisions):
                 notices.append(
                     f"{position.instrument.symbol} 已满足个人纪律的加仓价；"
@@ -599,10 +771,14 @@ async def _apply_position_exits(
             active_positions.append(updated_position)
             continue
 
-        evidence, evidence_notice = await _automatic_exit_evidence(position, quote, strategies)
-        if evidence_notice is not None:
-            notices.append(evidence_notice)
+        evidence = replace(evidence, stop_price=plan.stop_price, target_price=plan.target_price)
         decision = evaluate_simulation_exit(evidence)
+        plan = replace(plan, action=decision.action, basis=(*plan.basis, *decision.rationale))
+        position = replace(position, exit_plan=plan)
+        notices.append(
+            f"{position.instrument.symbol} 逐仓复核：止损 {plan.stop_price:.4f}，"
+            f"止盈 {plan.target_price:.4f}；{decision.rationale[0]}"
+        )
         if decision.action == "hold":
             updated_position = _position_with_exit_state(
                 position,
@@ -610,8 +786,7 @@ async def _apply_position_exits(
                 profit_take_stage=decision.profit_take_stage,
                 trailing_stop_price=decision.trailing_stop_price,
             )
-            if updated_position != position:
-                updated_position = await repository.save_position(updated_position)
+            updated_position = await repository.save_position(updated_position)
             active_positions.append(updated_position)
             continue
 
@@ -633,9 +808,13 @@ async def _automatic_exit_evidence(
     sma_20 = None
     factor_directions: tuple[tuple[str, str], ...] = ()
     notice = None
+    fresh_flow_out = False
     try:
         provider = historical_bars_provider(position.instrument)
-        bars = await provider.get_daily_bars(position.instrument, limit=90)
+        bars = await asyncio.wait_for(
+            provider.get_daily_bars(position.instrument, limit=90),
+            timeout=20,
+        )
         indicators = calculate_indicators(bars)
         analysis = analyze_builtin_factors(
             position.instrument,
@@ -666,6 +845,54 @@ async def _automatic_exit_evidence(
             f"{position.instrument.symbol} 日线/因子退出证据暂不可用：{error}；"
             "本轮仍检查硬止损、固定盈利目标和已启用的移动保护。"
         )
+    try:
+        report = await asyncio.wait_for(
+            research(
+                ResearchRequest(
+                    symbol=position.instrument.symbol,
+                    market=position.instrument.market,
+                    instrument_type=position.instrument.instrument_type,
+                )
+            ),
+            timeout=25,
+        )
+        requested = set().union(*(s.factor_ids for s in strategies)) if strategies else None
+        if report.factor_analysis:
+            observations = report.factor_analysis.get("observations", [])
+            factor_directions = tuple(
+                (item["identifier"], item["direction"])
+                for item in observations
+                if item["direction"] != "unavailable"
+                and (requested is None or item["identifier"] in requested)
+            )
+        flow = report.capital_flow or {}
+        quote_date = quote.observed_at.astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+        fresh_flow_out = (
+            flow.get("trade_date") == quote_date
+            and flow.get("direction") == "outflow"
+            and flow.get("institutional_direction") == "outflow"
+        )
+        details = list(report.notices)
+        if flow.get("trade_date"):
+            details.append(
+                f"资金流日期 {flow['trade_date']}，来源 {flow.get('source')}；"
+                f"净流向 {flow.get('direction')}，机构 {flow.get('institutional_direction')}。"
+            )
+        if report.fundamentals:
+            details.append(
+                f"基本面来源 {report.fundamentals.get('source')}，"
+                f"披露日期 {report.fundamentals.get('announced_on', '未提供')}。"
+            )
+        if report.news_sentiment:
+            details.append("已读取公开市场资讯情绪；未确认与个股及当日的关联，不单独作为卖出信号。")
+            factor_directions = tuple(
+                item for item in factor_directions if item[0] != "news_sentiment"
+            )
+        notice = "；".join(filter(None, (notice, *details))) or None
+    except Exception:
+        notice = "；".join(
+            filter(None, (notice, "基本面/资金流/资讯复核超时或不可用，保留价格保护。"))
+        )
     return (
         SimulationExitEvidence(
             current_price=quote.last_price,
@@ -677,6 +904,10 @@ async def _automatic_exit_evidence(
             atr_14=atr_14,
             sma_20=sma_20,
             factor_directions=factor_directions,
+            previous_trailing_stop=position.trailing_stop_price,
+            stop_price=position.exit_plan.stop_price if position.exit_plan else None,
+            target_price=position.exit_plan.target_price if position.exit_plan else None,
+            fresh_flow_out=fresh_flow_out,
         ),
         notice,
     )
@@ -718,6 +949,7 @@ async def _execute_position_sale(
         profit_take_stage=decision.profit_take_stage,
         trailing_stop_price=decision.trailing_stop_price,
         status="closed" if is_closed else "open",
+        exit_plan=position.exit_plan,
     )
     updated_position = await repository.save_position(updated_position)
     await repository.save_trade(
@@ -772,14 +1004,15 @@ def _position_with_exit_state(
         profit_take_stage=profit_take_stage,
         trailing_stop_price=trailing_stop_price,
         status=position.status,
+        exit_plan=position.exit_plan,
     )
 
 
 def _exit_reason_label(reason_code: str) -> str:
     return {
         "personal_discipline": "个人纪律",
-        "hard_stop_loss": "8% 硬止损",
-        "first_profit_target": "20% 首次盈利目标",
+        "hard_stop_loss": "退出计划风险保护",
+        "first_profit_target": "退出计划首次盈利目标",
         "trailing_profit_stop": "ATR 移动盈利保护",
         "confirmed_trend_breakdown": "均线与多因子趋势转弱",
     }.get(reason_code, reason_code)
