@@ -7,13 +7,15 @@ available confirmations so a missing upstream field cannot become a sell signal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import datetime
 from decimal import Decimal
 
+from ai_trading_agent.domain.aggregate.exit_plan import PositionExitPlan
 from ai_trading_agent.domain.service.simulated_execution import quantity_for_partial_exit
 
 HUNDRED = Decimal("100")
-EXIT_POLICY_VERSION = "classic_v1"
+EXIT_POLICY_VERSION = "adaptive_v2"
 HARD_STOP_LOSS_PERCENT = Decimal("8")
 FIRST_PROFIT_TARGET_PERCENT = Decimal("20")
 DEFAULT_TRAILING_DISTANCE_PERCENT = Decimal("8")
@@ -45,6 +47,10 @@ class SimulationExitEvidence:
     atr_14: Decimal | None = None
     sma_20: Decimal | None = None
     factor_directions: tuple[tuple[str, str], ...] = ()
+    stop_price: Decimal | None = None
+    target_price: Decimal | None = None
+    previous_trailing_stop: Decimal | None = None
+    fresh_flow_out: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -93,7 +99,12 @@ def evaluate_simulation_exit(evidence: SimulationExitEvidence) -> SimulationExit
     """Apply price protection, profit capture and confirmed trend deterioration."""
     high_watermark = max(evidence.highest_price, evidence.current_price)
     return_percent = ((evidence.current_price / evidence.average_cost) - Decimal("1")) * HUNDRED
-    hard_stop_price = evidence.average_cost * (Decimal("1") - HARD_STOP_LOSS_PERCENT / HUNDRED)
+    hard_stop_price = evidence.stop_price or evidence.average_cost * (
+        Decimal("1") - HARD_STOP_LOSS_PERCENT / HUNDRED
+    )
+    target_price = evidence.target_price or evidence.average_cost * (
+        Decimal("1") + FIRST_PROFIT_TARGET_PERCENT / HUNDRED
+    )
     trailing_stop_price = _trailing_stop_price(evidence, high_watermark)
 
     if evidence.current_price <= hard_stop_price:
@@ -103,8 +114,7 @@ def evaluate_simulation_exit(evidence: SimulationExitEvidence) -> SimulationExit
             quantity=evidence.quantity,
             reason_code="hard_stop_loss",
             rationale=(
-                f"持仓收益率 {return_percent:.2f}% 已触及 "
-                f"-{HARD_STOP_LOSS_PERCENT}% 最大亏损基线。",
+                f"持仓收益率 {return_percent:.2f}% 已触及 本仓位已记录的风险保护线。",
                 f"成本 {evidence.average_cost:.4f}，风险保护价 {hard_stop_price:.4f}。",
             ),
             high_watermark=high_watermark,
@@ -144,13 +154,13 @@ def evaluate_simulation_exit(evidence: SimulationExitEvidence) -> SimulationExit
             reason_code="confirmed_trend_breakdown",
             rationale=(
                 f"现价 {evidence.current_price:.4f} 已跌破 20 日均线 {evidence.sma_20:.4f}。",
-                f"同时出现至少两项独立风险确认：{'、'.join(adverse_factors)}。",
+                f"同时出现至少两项技术风险确认：{'、'.join(adverse_factors)}。",
             ),
             high_watermark=high_watermark,
             trailing_stop_price=trailing_stop_price,
         )
 
-    if evidence.profit_take_stage == 0 and return_percent >= FIRST_PROFIT_TARGET_PERCENT:
+    if evidence.profit_take_stage == 0 and evidence.current_price >= target_price:
         quantity = quantity_for_partial_exit(evidence.quantity, evidence.lot_size)
         action = "full_exit" if quantity >= evidence.quantity else "partial_exit"
         return _decision(
@@ -159,8 +169,7 @@ def evaluate_simulation_exit(evidence: SimulationExitEvidence) -> SimulationExit
             quantity=quantity,
             reason_code="first_profit_target",
             rationale=(
-                f"持仓收益率 {return_percent:.2f}% 已达到 {FIRST_PROFIT_TARGET_PERCENT}% "
-                "首次盈利目标。",
+                f"持仓收益率 {return_percent:.2f}%，现价已达到记录的止盈价 {target_price:.4f}。",
                 (
                     "按有效交易单位兑现约一半仓位，剩余仓位转入移动保护。"
                     if action == "partial_exit"
@@ -169,17 +178,7 @@ def evaluate_simulation_exit(evidence: SimulationExitEvidence) -> SimulationExit
             ),
             high_watermark=high_watermark,
             trailing_stop_price=_trailing_stop_price(
-                SimulationExitEvidence(
-                    current_price=evidence.current_price,
-                    average_cost=evidence.average_cost,
-                    quantity=evidence.quantity,
-                    highest_price=high_watermark,
-                    profit_take_stage=1,
-                    lot_size=evidence.lot_size,
-                    atr_14=evidence.atr_14,
-                    sma_20=evidence.sma_20,
-                    factor_directions=evidence.factor_directions,
-                ),
+                replace(evidence, highest_price=high_watermark, profit_take_stage=1),
                 high_watermark,
             ),
             profit_take_stage=1,
@@ -234,7 +233,46 @@ def _trailing_stop_price(
             MAX_TRAILING_DISTANCE_PERCENT,
             max(MIN_TRAILING_DISTANCE_PERCENT, distance_percent),
         )
-    return high_watermark * (Decimal("1") - distance_percent / HUNDRED)
+    return max(
+        evidence.previous_trailing_stop or Decimal("0"),
+        high_watermark * (Decimal("1") - distance_percent / HUNDRED),
+    )
+
+
+def review_exit_plan(
+    evidence: SimulationExitEvidence,
+    previous: PositionExitPlan | None,
+    reviewed_at: datetime,
+    *,
+    fresh_flow_out: bool = False,
+    data_notes: tuple[str, ...] = (),
+) -> PositionExitPlan:
+    """Set entry risk at 2 ATR (4–8%) and 2R target; never loosen existing stops.
+
+    Multiple technical risks plus same-day institutional/total outflow tighten
+    protection. Missing or stale research cannot create negative evidence.
+    """
+    risk = Decimal("0.08")
+    if evidence.atr_14 is not None:
+        risk = min(
+            Decimal("0.08"), max(Decimal("0.04"), evidence.atr_14 * 2 / evidence.average_cost)
+        )
+    stop = evidence.average_cost * (1 - risk)
+    target = evidence.average_cost * (1 + risk * 2)
+    basis = ["入场风险采用 2×ATR，限制在成本的 4%–8%；首批止盈设为初始风险的两倍。"]
+    if evidence.atr_14 is None:
+        basis.append("ATR 暂缺：使用 8% 风险距离和 16% 首批止盈作为明确的降级计划。")
+    if previous:
+        stop = max(previous.stop_price, stop)
+        target = previous.target_price
+        basis.append("已设止损只收紧；首次止盈价保持原计划，避免不断追高目标。")
+    adverse = _confirmed_adverse_factors(evidence.factor_directions)
+    if fresh_flow_out and len(adverse) >= 2:
+        stop = max(stop, evidence.current_price * Decimal("0.97"))
+        basis.append("当日资金净流出且至少两项技术因子转弱，收紧保护至现价下方 3%。")
+    if evidence.previous_trailing_stop is not None:
+        stop = max(stop, evidence.previous_trailing_stop)
+    return PositionExitPlan(stop, target, reviewed_at, basis=tuple(basis), data_notes=data_notes)
 
 
 def _trailing_basis(evidence: SimulationExitEvidence, high_watermark: Decimal) -> str:
@@ -253,7 +291,9 @@ def _confirmed_adverse_factors(
     factor_directions: tuple[tuple[str, str], ...],
 ) -> tuple[str, ...]:
     return tuple(
-        identifier
-        for identifier, direction in factor_directions
-        if identifier in _TREND_RISK_FACTORS and direction == "adverse"
+        dict.fromkeys(
+            identifier
+            for identifier, direction in factor_directions
+            if identifier in _TREND_RISK_FACTORS and direction == "adverse"
+        )
     )

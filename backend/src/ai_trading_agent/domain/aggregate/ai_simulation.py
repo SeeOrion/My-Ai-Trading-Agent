@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from ai_trading_agent.domain.aggregate.exit_plan import PositionExitPlan
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.domain.service.position_metrics import calculate_position_metrics
@@ -51,6 +52,7 @@ class AiSimulationPosition:
     profit_take_stage: int = 0
     trailing_stop_price: Decimal | None = None
     status: str = "open"
+    exit_plan: PositionExitPlan | None = None
 
     def __post_init__(self) -> None:
         if self.quantity <= 0 or self.average_cost <= 0:
