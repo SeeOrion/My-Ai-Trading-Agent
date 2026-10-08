@@ -1,4 +1,5 @@
 import { FormEvent, ReactNode, useEffect, useState } from "react";
+import { BestEntryPanel } from "./BestEntryPanel";
 import {
   createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
@@ -221,6 +222,7 @@ function Dashboard() {
   useEffect(() => { void load(); }, []);
   return <><section className="hero"><div><p className="eyebrow">盘后市场快报</p><h2>今日市场快报</h2><p>从同花顺指数快照汇总主要指数和行业板块涨跌。盘中访问时为最新快照，收盘后可作为当日复盘入口。</p></div><button className="primary" onClick={() => void load(true)} disabled={loading}>{loading ? "更新中…" : "刷新快报"}</button></section>
     <ClosingPlanPanel />
+    <BestEntryPanel />
     <section className="dashboard-layout"><div className="dashboard-main"><section className="panel market-brief-panel"><div className="panel-head"><div><p className="eyebrow">指数总览</p><h2>指数总览</h2><p>上证、深成、创业板和沪深 300。</p></div>{brief && <small className="brief-time">快照于 {new Date(brief.observed_at).toLocaleString()}</small>}</div>{error && <div className="notice">{error}</div>}{brief && <><div className="index-grid">{brief.indices.map((item) => <article className="index-card" key={item.symbol}><small>{item.name}</small><strong>{item.last_price}</strong><span className={Number(item.change_percent) > 0 ? "change up" : Number(item.change_percent) < 0 ? "change down" : "change"}>{formatPercent(item.change_percent)} {item.price_change !== null ? `(${formatSigned(item.price_change)})` : ""}</span></article>)}</div><section className="rotation-section"><div><p className="eyebrow">板块轮动</p><h2>板块轮动</h2><p>按行业指数当日涨跌幅排序，不等同于资金流向。</p></div><div className="rotation-grid"><RotationList title="领涨板块" items={brief.leading_sectors} tone="up" /><RotationList title="领跌板块" items={brief.lagging_sectors} tone="down" /></div></section><p className="brief-note">{brief.coverage}<br />{brief.disclaimer}</p></>}</section><OverviewNews /></div><MarketAssistant /></section>
   </>;
 }
@@ -721,7 +723,9 @@ function AiSimulationOverviewView({ overview, onOpenSettings, onRun, running }: 
 }
 
 function AiExitProtection({ position, currency }: { position: AiSimulationOverview["positions"][number]; currency: string }) {
-  return <section className="ai-exit-protection"><strong>自动卖出保护</strong><div><span>硬止损 {formatPositionNumber(position.hard_stop_price)} {currency}</span><span>首次盈利目标 {formatPositionNumber(position.first_profit_target_price)} {currency}</span><span>持仓高水位 {formatPositionNumber(position.highest_price)} {currency}</span><span>{position.profit_take_stage > 0 ? "已分批止盈" : "等待首次止盈"}</span>{position.trailing_stop_price !== null && <span>移动保护 {formatPositionNumber(position.trailing_stop_price)} {currency}</span>}</div><small>个人纪律优先；无适用纪律时，再按 8% 风险保护、20% 分批盈利目标、ATR 移动保护与多因子趋势转弱处理。这是模拟风控基线，不保证收益且不构成投资建议。</small></section>;
+  const plan = position.exit_plan;
+  const actions: Record<string, string> = { hold: "继续观察", partial_exit: "分批止盈", full_exit: "退出", discipline_hold: "遵守个人纪律", settlement_hold: "当日买入，等待可卖日" };
+  return <section className="ai-exit-protection"><strong>动态卖出计划 · {plan ? actions[plan.action] ?? "观察" : "等待下一次复核建档"}</strong><div><span>风险保护价 {formatPositionNumber(position.hard_stop_price)} {currency}</span><span>首次止盈价 {formatPositionNumber(position.first_profit_target_price)} {currency}</span><span>持仓高水位 {formatPositionNumber(position.highest_price)} {currency}</span><span>{position.profit_take_stage > 0 ? "已分批止盈" : "等待首次止盈"}</span>{position.trailing_stop_price !== null && <span>移动保护 {formatPositionNumber(position.trailing_stop_price)} {currency}</span>}</div>{plan && <><small>复核于 {new Date(plan.reviewed_at).toLocaleString()}</small><ul>{plan.basis.map((reason, index) => <li key={index}>{reason}</li>)}</ul>{plan.data_notes.length > 0 && <details><summary>数据依据与缺失提示</summary>{plan.data_notes.map((note, index) => <p key={index}>{note}</p>)}</details>}</>}<small>个人纪律优先，以上自动保护价在存在适用纪律时仅作参考。价格是触发条件，并非保证成交价；仅在有效交易时段定时复核，不是逐笔监控，不保证收益。</small></section>;
 }
 
 function AiSimulationDecisionReports({ reports }: { reports: AiSimulationOverview["decision_reports"] }) {

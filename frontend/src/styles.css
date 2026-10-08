@@ -165,3 +165,14 @@ header { gap: 16px; margin-bottom: 18px; } h1 { margin-bottom: 5px; font-size: c
 .closing-window { color: #3b69b4; font-weight: 700; }
 @media (max-width: 1040px) { .closing-plan-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .closing-plan-list { grid-template-columns: 1fr; }.closing-plan-actions { justify-content: flex-start; } }
+/* Read-only overview recommendations; independent of account editor. */
+.best-entry-panel { margin-bottom: 16px; }
+.best-entry-controls, .best-entry-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.best-entry-controls select { min-width: 110px; }
+.best-entry-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+.best-entry-card { border: 1px solid #dbe4f1; border-radius: 12px; padding: 16px; min-width: 0; }
+.best-entry-card ul { padding-left: 18px; font-size: 14px; line-height: 1.6; }
+.best-entry-tags { margin-top: 10px; }
+.best-entry-excluded { margin: 12px 0; font-size: 14px; }
+.best-entry-excluded summary, .ai-exit-protection summary { cursor: pointer; }
+@media (max-width: 1000px) { .best-entry-grid { grid-template-columns: 1fr; } }

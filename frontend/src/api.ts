@@ -228,6 +228,15 @@ export interface AiSimulationDecision { symbol: string; display_name: string | n
 export interface AiSimulationRun { run_id: string; portfolio_id: string; market: Market; trigger: "manual" | "scheduled"; status: "completed" | "failed"; started_at: string; completed_at: string; position_count: number; total_equity: string | null; decision_reports: AiSimulationDecision[]; notices: string[]; error_message: string | null; }
 export interface AiSimulationOverview { portfolio_id: string; market: Market; currency: string; initial_capital: string; cash_balance: string; invested_cost: string; market_value: string; total_equity: string; cumulative_pnl: string; daily_pnl: string | null; month_to_date_pnl: string | null; max_positions: number; strategy_ids: string[]; observed_at: string; positions: AiSimulationPosition[]; notices: string[]; decision_reports: AiSimulationDecision[]; }
 
+export interface PositionExitPlan { stop_price: string; target_price: string; reviewed_at: string; action: string; basis: string[]; data_notes: string[]; version: string; }
+export interface AiSimulationPosition { exit_plan?: PositionExitPlan | null; }
+export interface BestEntries {
+  market: Market; refreshed_at: string; universe_size: number; coverage: string; account_basis: string;
+  candidates: Array<{ symbol: string; name: string | null; price: string; score: string; observed_at: string; source: string; reasons: string[]; missing_factors: string[]; supportive: number; adverse: number; }>;
+  excluded: Array<{ symbol: string; reasons: string[]; }>;
+}
+export const fetchBestEntries = (market: Market, signal?: AbortSignal) => request<BestEntries>(`/api/v1/market/best-entries?market=${market}`, { signal });
+
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {}
