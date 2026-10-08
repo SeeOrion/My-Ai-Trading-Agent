@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from ai_trading_agent.domain.aggregate.ai_simulation import (
     AiSimulationRun,
     AiSimulationTrade,
 )
+from ai_trading_agent.domain.aggregate.exit_plan import PositionExitPlan
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.enums.market import InstrumentType, Market
 from ai_trading_agent.infrastructure.repo.models import (
@@ -107,6 +109,20 @@ class SqlAlchemyAiSimulationRepository:
             record.highest_price = position.highest_price
             record.profit_take_stage = position.profit_take_stage
             record.trailing_stop_price = position.trailing_stop_price
+            plan = position.exit_plan
+            record.exit_plan = (
+                None
+                if plan is None
+                else {
+                    "stop_price": str(plan.stop_price),
+                    "target_price": str(plan.target_price),
+                    "reviewed_at": plan.reviewed_at.isoformat(),
+                    "action": plan.action,
+                    "basis": list(plan.basis),
+                    "data_notes": list(plan.data_notes),
+                    "version": plan.version,
+                }
+            )
             record.status = position.status
             await session.commit()
             await session.refresh(record)
@@ -213,6 +229,7 @@ def _position(record: AiSimulationPositionRecord) -> AiSimulationPosition:
             None if record.trailing_stop_price is None else Decimal(str(record.trailing_stop_price))
         ),
         status=record.status,
+        exit_plan=_exit_plan(record.exit_plan),
     )
 
 
@@ -226,6 +243,20 @@ def _trade(record: AiSimulationTradeRecord) -> AiSimulationTrade:
         price=Decimal(str(record.price)),
         executed_at=record.executed_at,
         rationale=tuple(str(item) for item in record.rationale),
+    )
+
+
+def _exit_plan(payload: dict[str, object] | None) -> PositionExitPlan | None:
+    if not payload:
+        return None
+    return PositionExitPlan(
+        stop_price=Decimal(str(payload["stop_price"])),
+        target_price=Decimal(str(payload["target_price"])),
+        reviewed_at=datetime.fromisoformat(str(payload["reviewed_at"])),
+        action=str(payload["action"]),
+        basis=tuple(payload["basis"]),
+        data_notes=tuple(payload["data_notes"]),
+        version=str(payload["version"]),
     )
 
 

@@ -152,6 +152,7 @@ class AiSimulationPositionRecord(Base, TimestampedRecord):
     highest_price: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     profit_take_stage: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     trailing_stop_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    exit_plan: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
 
 
