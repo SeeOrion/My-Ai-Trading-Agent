@@ -16,8 +16,12 @@ async def test_cached_screen_keeps_timestamp_first_and_separates_limits(monkeypa
     monkeypatch.setattr(workspace, "_candidate_provider", lambda market: object())
     monkeypatch.setattr(workspace, "RankMarketCandidatesHandler", lambda provider: handler)
     monkeypatch.setattr(workspace, "_enrich_candidate_names", AsyncMock(return_value=screen))
-    first = await workspace.today_candidates(Market.A_SHARE, CandidateRanking.BALANCED_ENTRY, limit=10)
-    cached = await workspace.today_candidates(Market.A_SHARE, CandidateRanking.BALANCED_ENTRY, limit=10)
+    first = await workspace.today_candidates(
+        Market.A_SHARE, CandidateRanking.BALANCED_ENTRY, limit=10
+    )
+    cached = await workspace.today_candidates(
+        Market.A_SHARE, CandidateRanking.BALANCED_ENTRY, limit=10
+    )
     assert cached == first
     handler.handle.assert_awaited_once()
     await workspace.today_candidates(Market.A_SHARE, CandidateRanking.BALANCED_ENTRY, limit=3)
