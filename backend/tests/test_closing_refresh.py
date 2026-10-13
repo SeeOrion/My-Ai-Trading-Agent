@@ -80,3 +80,16 @@ async def test_scheduler_measures_resume_delay(monkeypatch):
     scheduler._stop_requested.set()
     await scheduler._wait(600)
     assert scheduler.resume_delay_seconds == 100
+
+
+@pytest.mark.asyncio
+async def test_closing_timeout_retries_once(monkeypatch):
+    instrument = Instrument("600519.SH", Market.A_SHARE)
+    p = Decimal(100)
+    bar = PriceBar(instrument, date(2026, 10, 12), p, p, p, p, p)
+    fetch = AsyncMock(side_effect=[TimeoutError(), (bar,)])
+    monkeypatch.setattr(closing_valuation, "historical_bars_provider",
+                        lambda *a, **kw: SimpleNamespace(name="test", get_daily_bars=fetch))
+    quote, _, _ = await closing_valuation.closing_quote_and_bars(
+        instrument, datetime(2026, 10, 13, tzinfo=UTC))
+    assert fetch.await_count == 2 and quote.last_price == p

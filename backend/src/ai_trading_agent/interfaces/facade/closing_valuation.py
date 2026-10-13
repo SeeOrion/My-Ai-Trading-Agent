@@ -10,7 +10,18 @@ from ai_trading_agent.interfaces.facade.research_workspace import historical_bar
 
 async def closing_quote_and_bars(instrument: Instrument, now: datetime):
     provider = historical_bars_provider(instrument, unadjusted=True)
-    bars = await asyncio.wait_for(provider.get_daily_bars(instrument, limit=90), timeout=30)
+    for attempt in range(2):
+        try:
+            bars = await asyncio.wait_for(provider.get_daily_bars(instrument, limit=90), timeout=30)
+            break
+        except Exception as error:
+            transient = isinstance(error, TimeoutError) or any(
+                marker in str(error).lower()
+                for marker in ("timed out", "name or service not known", "connection reset")
+            )
+            if not transient or attempt == 1:
+                raise
+            await asyncio.sleep(0.5)
     calendar = ExchangeTradingCalendar()
     completed = [
         (bar, calendar.completed_close(instrument.market, bar.session_date, now)) for bar in bars
