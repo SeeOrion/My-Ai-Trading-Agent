@@ -36,6 +36,7 @@ from ai_trading_agent.domain.service.ai_simulation import (
     reconfigure_simulation_portfolio,
 )
 from ai_trading_agent.domain.service.discipline_entry import disciplined_entry_blockers
+from ai_trading_agent.domain.service.simulation_failure import simulation_failure_message
 from ai_trading_agent.domain.service.factor_analysis import analyze_builtin_factors
 from ai_trading_agent.domain.service.simulated_execution import (
     estimate_simulated_execution,
@@ -344,8 +345,13 @@ async def run_scheduled_ai_simulations(
                 f"模拟任务在 {run_timeout_seconds} 秒内未完成，已停止本轮并等待下一次定时任务。",
             )
         except Exception as error:
+            scheduler = getattr(getattr(app, "state", None), "ai_simulation_scheduler", None)
+            message, notes = simulation_failure_message(
+                str(error)[:1_000], market,
+                resume_delay=getattr(scheduler, "resume_delay_seconds", 0),
+            )
             await _save_failed_scheduled_run(
-                repository, portfolio, market, started_at, str(error)[:1_000]
+                repository, portfolio, market, started_at, message, notices=notes,
             )
 
 
@@ -355,6 +361,7 @@ async def _save_failed_scheduled_run(
     market: Market,
     started_at: datetime,
     error_message: str,
+    *, notices: tuple[str, ...] = (),
 ) -> None:
     """Persist an auditable failure without blocking the next account's schedule."""
     try:
@@ -371,6 +378,7 @@ async def _save_failed_scheduled_run(
                 position_count=position_count,
                 total_equity=None,
                 error_message=error_message,
+                notices=notices,
             )
         )
     except Exception:
@@ -378,7 +386,7 @@ async def _save_failed_scheduled_run(
         return
 
 
-async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOverview:
+async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bool = False) -> AiSimulationOverview:
     repository = ai_simulation_repository(app)
     portfolio = await repository.get_active(market)
     if portfolio is None:
@@ -394,7 +402,9 @@ async def ai_simulation_overview(app: FastAPI, market: Market) -> AiSimulationOv
         )
         for item in positions
     ]
-    paper_overview = await paper_portfolio_overview(paper_positions)
+    paper_overview = await paper_portfolio_overview(paper_positions, close_only=close_only)
+    if close_only and len(paper_overview.valuations) < len(positions):
+        raise ValueError("部分持仓收盘价尚不可用；已保留之前显示的估值，请稍后重试。")
     by_id = {item.position.position_id: item for item in paper_overview.valuations}
     display_names = await _display_names(positions)
     valued_positions = tuple(

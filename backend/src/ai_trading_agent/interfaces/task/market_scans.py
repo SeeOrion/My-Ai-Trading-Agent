@@ -27,6 +27,15 @@ class RecurringTaskScheduler:
         self._align_to_interval_boundary = align_to_interval_boundary
         self._stop_requested = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self.resume_delay_seconds = 0.0
+
+    async def _wait(self, seconds: float) -> None:
+        expected = time.time() + seconds
+        try:
+            await asyncio.wait_for(self._stop_requested.wait(), timeout=seconds)
+        except TimeoutError:
+            pass
+        self.resume_delay_seconds = max(0.0, time.time() - expected)
 
     def start(self) -> None:
         if self._task is None:
@@ -39,12 +48,7 @@ class RecurringTaskScheduler:
 
     async def _run(self) -> None:
         if not self._run_immediately:
-            try:
-                await asyncio.wait_for(
-                    self._stop_requested.wait(), timeout=self._first_wait_seconds()
-                )
-            except TimeoutError:
-                pass
+            await self._wait(self._first_wait_seconds())
         while not self._stop_requested.is_set():
             try:
                 await self._callback()
@@ -58,9 +62,7 @@ class RecurringTaskScheduler:
                     if self._align_to_interval_boundary
                     else self._interval_seconds
                 )
-                await asyncio.wait_for(
-                    self._stop_requested.wait(), timeout=wait_seconds
-                )
+                await self._wait(wait_seconds)
             except TimeoutError:
                 continue
 

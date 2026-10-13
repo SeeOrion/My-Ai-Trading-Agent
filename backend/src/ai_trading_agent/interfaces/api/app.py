@@ -495,11 +495,11 @@ def create_app(
         response_model=PaperPortfolioOverviewResponse,
         tags=["portfolio"],
     )
-    async def get_paper_portfolio_overview() -> PaperPortfolioOverviewResponse:
+    async def get_paper_portfolio_overview(close_only: bool = False) -> PaperPortfolioOverviewResponse:
         try:
             positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
             return PaperPortfolioOverviewResponse.from_domain(
-                await paper_portfolio_overview(positions)
+                await paper_portfolio_overview(positions, close_only=close_only)
             )
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"模拟组合估值不可用：{error}") from error
@@ -509,12 +509,12 @@ def create_app(
         response_model=AiSimulationOverviewResponse,
         tags=["ai-simulation"],
     )
-    async def get_ai_simulation_overview(market: Market) -> AiSimulationOverviewResponse:
+    async def get_ai_simulation_overview(market: Market, close_only: bool = False) -> AiSimulationOverviewResponse:
         try:
             if market is Market.FUND:
                 raise ValueError("AI 模拟选股当前仅支持 A 股、港股和美股股票样本")
             return AiSimulationOverviewResponse.from_domain(
-                await ai_simulation_overview(app, market)
+                await ai_simulation_overview(app, market, close_only=close_only)
             )
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error

@@ -25,6 +25,7 @@ from ai_trading_agent.infrastructure.repo.portfolio import (
     SqlAlchemyWatchlistRepository,
 )
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
+from ai_trading_agent.interfaces.facade.closing_valuation import closing_quote_and_bars
 from ai_trading_agent.interfaces.facade.research_workspace import (
     historical_daily_bars,
     latest_quote,
@@ -68,7 +69,7 @@ def paper_position_from_input(payload: PaperPositionInput, position_id: UUID) ->
 
 
 async def paper_portfolio_overview(
-    positions: list[PaperPosition], *, now: datetime | None = None
+    positions: list[PaperPosition], *, now: datetime | None = None, close_only: bool = False
 ) -> PaperPortfolioOverview:
     """Refresh a small manual portfolio with per-currency performance metrics."""
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
@@ -76,7 +77,8 @@ async def paper_portfolio_overview(
     semaphore = asyncio.Semaphore(4)
     results = await asyncio.gather(
         *(
-            _value_position_with_references(position, month_start, semaphore)
+            _value_position_with_references(position, month_start, semaphore,
+                                            close_only=close_only, now=observed_at)
             for position in positions
         )
     )
@@ -102,8 +104,21 @@ async def _value_position_with_references(
     position: PaperPosition,
     month_start: date,
     semaphore: asyncio.Semaphore,
+    *, close_only: bool = False, now: datetime | None = None,
 ) -> tuple[PaperPositionValuation | None, tuple[str, ...]]:
     """Use a quote for daily change and one prior-month close for the MTD estimate."""
+    if close_only:
+        try:
+            async with semaphore:
+                quote, bars, notice = await closing_quote_and_bars(position.instrument, now)
+            month_start = bars[-1].session_date.replace(day=1)
+            reference = _month_reference_close(bars, month_start)
+            return value_paper_position(
+                position, quote, month_reference_close=reference[1] if reference else None,
+                month_reference_date=reference[0] if reference else None,
+            ), (notice,)
+        except Exception:
+            return None, (f"{position.instrument.symbol} 收盘价暂不可用，未使用盘中价格替代。",)
     async with semaphore:
         quote_result, bars_result = await asyncio.gather(
             latest_quote(position.instrument),

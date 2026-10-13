@@ -66,8 +66,12 @@ class HithinkAshareHistoricalBarsProvider:
     name = "hithink_finance"
 
     def __init__(
-        self, settings: HithinkFinanceSettings, *, response_fetcher: ResponseFetcher | None = None
+        self, settings: HithinkFinanceSettings, *, response_fetcher: ResponseFetcher | None = None,
+        adjust: str = "forward",
     ) -> None:
+        if adjust not in {"none", "forward", "backward"}:
+            raise ValueError("invalid adjustment")
+        self._adjust = adjust
         self._client = HithinkFinanceRestClient(settings, response_fetcher=response_fetcher)
 
     async def get_daily_bars(self, instrument: Instrument, limit: int) -> tuple[PriceBar, ...]:
@@ -85,7 +89,7 @@ class HithinkAshareHistoricalBarsProvider:
                     "interval": "1d",
                     "start": int(start.timestamp() * 1000),
                     "end": int(end.timestamp() * 1000),
-                    "adjust": "forward",
+                    "adjust": self._adjust,
                 },
             )
         except HithinkFinanceServiceError as error:
@@ -99,8 +103,9 @@ class HithinkAshareHistoricalBarsProvider:
 class FutuHistoricalBarsProvider:
     name = "futu"
 
-    def __init__(self, settings: FutuSettings) -> None:
+    def __init__(self, settings: FutuSettings, *, unadjusted: bool = False) -> None:
         self._settings = settings
+        self._unadjusted = unadjusted
 
     async def get_daily_bars(self, instrument: Instrument, limit: int) -> tuple[PriceBar, ...]:
         if instrument.market not in {Market.HONG_KONG, Market.UNITED_STATES}:
@@ -113,7 +118,7 @@ class FutuHistoricalBarsProvider:
         except FutuProviderError as error:
             raise HistoricalBarsProviderError(str(error)) from error
         try:
-            from futu import RET_OK, KLType, OpenQuoteContext
+            from futu import RET_OK, AuType, KLType, OpenQuoteContext
         except ImportError as error:  # pragma: no cover
             raise HistoricalBarsProviderError("Futu SDK is not installed") from error
         context = OpenQuoteContext(host=self._settings.host, port=self._settings.port)
@@ -122,6 +127,7 @@ class FutuHistoricalBarsProvider:
                 FutuSymbolMapper.to_provider_code(instrument),
                 ktype=KLType.K_DAY,
                 max_count=limit,
+                autype=AuType.NONE if self._unadjusted else AuType.QFQ,
             )
             if result != RET_OK:
                 raise HistoricalBarsProviderError(f"Futu historical kline request failed: {frame}")

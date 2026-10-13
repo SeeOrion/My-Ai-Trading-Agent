@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from functools import lru_cache
 from zoneinfo import ZoneInfo
 
@@ -23,6 +23,17 @@ _CALENDAR_NAMES = {
 
 class ExchangeTradingCalendar:
     """Use maintained exchange schedules and fail closed outside their known range."""
+
+    def completed_close(self, market: Market, session_date: date, now: datetime) -> datetime | None:
+        calendar = _calendar(market)
+        try:
+            session = Timestamp(session_date)
+            if not calendar.is_session(session):
+                return None
+            close = calendar.session_close(session).to_pydatetime()
+            return close if close <= _aware_utc(now) else None
+        except (DateOutOfBounds, ValueError):
+            return None
 
     def is_trading_day(self, market: Market, observed_at: datetime) -> bool:
         calendar = _calendar(market)

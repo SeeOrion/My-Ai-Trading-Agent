@@ -304,8 +304,8 @@ export const fetchPaperPositions = () => request<PaperPosition[]>("/api/v1/paper
 export const createPaperPosition = (payload: PaperPositionInput) => request<PaperPosition>("/api/v1/paper-positions", { method: "POST", body: JSON.stringify(payload) });
 export const deletePaperPosition = (positionId: string) => request<void>(`/api/v1/paper-positions/${positionId}`, { method: "DELETE" });
 export const fetchPaperValuations = () => request<PaperPositionValuation[]>("/api/v1/paper-positions/valuations");
-export const fetchPaperPortfolioOverview = () => request<PaperPortfolioOverview>("/api/v1/paper-positions/overview");
-export const fetchAiSimulationOverview = (market: Exclude<Market, "fund">) => request<AiSimulationOverview>(`/api/v1/ai-simulation/overview?market=${market}`);
+export const fetchPaperPortfolioOverview = (closeOnly = false) => request<PaperPortfolioOverview>(`/api/v1/paper-positions/overview?close_only=${closeOnly}`);
+export const fetchAiSimulationOverview = (market: Exclude<Market, "fund">, closeOnly = false) => request<AiSimulationOverview>(`/api/v1/ai-simulation/overview?market=${market}&close_only=${closeOnly}`);
 export const fetchAiSimulationRuns = (market: Exclude<Market, "fund">) => request<AiSimulationRun[]>(`/api/v1/ai-simulation/runs?market=${market}&limit=14`);
 export const runAiSimulation = (payload: AiSimulationRunInput) => request<AiSimulationOverview>("/api/v1/ai-simulation/run", { method: "POST", body: JSON.stringify(payload) });
 export const updateAiSimulationSettings = (payload: AiSimulationRunInput) => request<AiSimulationOverview>("/api/v1/ai-simulation/settings", { method: "PUT", body: JSON.stringify(payload) });

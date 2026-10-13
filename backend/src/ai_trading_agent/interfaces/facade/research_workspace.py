@@ -596,7 +596,7 @@ async def historical_daily_bars(instrument: Instrument, *, limit: int = 90) -> t
     return await historical_bars_provider(instrument).get_daily_bars(instrument, limit)
 
 
-def historical_bars_provider(instrument: Instrument) -> HistoricalBarsProvider:
+def historical_bars_provider(instrument: Instrument, *, unadjusted: bool = False) -> HistoricalBarsProvider:
     """Centralize market-specific OHLCV selection for every focused use case."""
     load_runtime_environment()
     if _is_exchange_etf(instrument):
@@ -607,8 +607,10 @@ def historical_bars_provider(instrument: Instrument) -> HistoricalBarsProvider:
             "可使用基金研究页查看净值和回撤。"
         )
     if instrument.market is Market.A_SHARE:
-        return HithinkAshareHistoricalBarsProvider(HithinkFinanceSettings.from_environment())
-    return FutuHistoricalBarsProvider(FutuSettings.from_environment())
+        return HithinkAshareHistoricalBarsProvider(
+            HithinkFinanceSettings.from_environment(), adjust="none" if unadjusted else "forward",
+        )
+    return FutuHistoricalBarsProvider(FutuSettings.from_environment(), unadjusted=unadjusted)
 
 
 async def fund_research_report(instrument: Instrument) -> FundResearchReport:
