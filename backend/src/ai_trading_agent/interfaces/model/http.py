@@ -704,6 +704,7 @@ class PaperPortfolioOverviewResponse(BaseModel):
 
 
 class AiSimulationRunInput(BaseModel):
+    portfolio_id: UUID | None = None
     market: Market
     initial_capital: Decimal = Field(gt=0)
     max_positions: int = Field(default=3, ge=1, le=10)

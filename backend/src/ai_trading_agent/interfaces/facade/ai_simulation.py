@@ -73,19 +73,62 @@ class AiSimulationRunRequest:
     max_positions: int = 3
     strategy_ids: tuple[UUID, ...] = ()
     trigger: str = "manual"
+    portfolio_id: UUID | None = None
 
 
 def ai_simulation_repository(app: FastAPI) -> SqlAlchemyAiSimulationRepository:
     return SqlAlchemyAiSimulationRepository(private_session_factory(app))
 
 
+async def resolve_simulation_account(repository, market, portfolio_id=None):
+    if portfolio_id is not None:
+        account = await repository.get(portfolio_id)
+        if account is None or account.status != "active" or account.market != market.value:
+            raise ValueError("模拟账户不存在、未启用或市场不匹配")
+        return account
+    accounts = [a for a in await repository.list_active() if a.market == market.value]
+    if len(accounts) > 1:
+        raise ValueError("该市场存在多个模拟账户，请先选择账户")
+    return accounts[0] if accounts else None
+
+
+async def create_simulation_account(app: FastAPI, request: AiSimulationRunRequest):
+    strategies = await _select_strategies(app, request.market, request.strategy_ids)
+    _ensure_requested_strategies(request.strategy_ids, strategies)
+    if request.market is Market.FUND:
+        raise ValueError("AI 模拟账户仅支持股票市场")
+    account = AiSimulationPortfolio(uuid4(), request.market.value,
+        _currency_for_market(request.market), request.initial_capital, request.initial_capital,
+        request.max_positions, request.strategy_ids)
+    return await ai_simulation_repository(app).save_portfolio(account)
+
+
 async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> AiSimulationOverview:
+    return await _with_account_lock(app, request, _run_ai_simulation)
+
+
+async def _with_account_lock(app, request, operation):
+    account = await resolve_simulation_account(ai_simulation_repository(app), request.market,
+                                                request.portfolio_id)
+    if account is not None:
+        request = replace(request, portfolio_id=account.portfolio_id)
+    locks = getattr(app.state, "simulation_account_locks", None)
+    if locks is None:
+        locks = app.state.simulation_account_locks = {}
+    lock = locks.setdefault(str(request.portfolio_id or request.market), asyncio.Lock())
+    if lock.locked():
+        raise ValueError("该账户正在复核或更新，请等待完成后再操作")
+    async with lock:
+        return await operation(app, request)
+
+
+async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> AiSimulationOverview:
     """Run one bounded, deterministic AI paper-trading review for one market."""
     started_at = datetime.now(UTC)
     repository = ai_simulation_repository(app)
     strategies = await _select_strategies(app, request.market, request.strategy_ids)
     _ensure_requested_strategies(request.strategy_ids, strategies)
-    portfolio = await repository.get_active(request.market)
+    portfolio = await resolve_simulation_account(repository, request.market, request.portfolio_id)
     if portfolio is None:
         portfolio = AiSimulationPortfolio(
             portfolio_id=uuid4(),
@@ -233,7 +276,7 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
             f"{'、'.join(unavailable_factor_ids)}。缺失因子仅作提示，不会单独阻止模拟建仓。"
         )
 
-    overview = await ai_simulation_overview(app, request.market)
+    overview = await ai_simulation_overview(app, request.market, portfolio_id=portfolio.portfolio_id)
     result = AiSimulationOverview(
         portfolio=overview.portfolio,
         observed_at=overview.observed_at,
@@ -268,16 +311,22 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
 async def update_ai_simulation_settings(
     app: FastAPI, request: AiSimulationRunRequest
 ) -> AiSimulationOverview:
+    return await _with_account_lock(app, request, _update_ai_simulation_settings)
+
+
+async def _update_ai_simulation_settings(
+    app: FastAPI, request: AiSimulationRunRequest
+) -> AiSimulationOverview:
     """Persist account settings without running a candidate screen or trade cycle."""
     repository = ai_simulation_repository(app)
-    portfolio = await repository.get_active(request.market)
+    portfolio = await resolve_simulation_account(repository, request.market, request.portfolio_id)
     if portfolio is None:
         raise LookupError("尚未创建该市场的 AI 模拟组合")
     strategies = await _select_strategies(app, request.market, request.strategy_ids)
     _ensure_requested_strategies(request.strategy_ids, strategies)
     positions = await repository.list_open_positions(portfolio.portfolio_id)
     await _save_reconfigured_portfolio(repository, portfolio, positions, request, strategies)
-    overview = await ai_simulation_overview(app, request.market)
+    overview = await ai_simulation_overview(app, request.market, portfolio_id=portfolio.portfolio_id)
     return AiSimulationOverview(
         portfolio=overview.portfolio,
         observed_at=overview.observed_at,
@@ -295,9 +344,11 @@ async def update_ai_simulation_settings(
 
 
 async def ai_simulation_runs(
-    app: FastAPI, market: Market, limit: int = 14
+    app: FastAPI, market: Market, limit: int = 14, portfolio_id: UUID | None = None
 ) -> list[AiSimulationRun]:
-    return await ai_simulation_repository(app).list_runs(market, limit)
+    repository = ai_simulation_repository(app)
+    account = await resolve_simulation_account(repository, market, portfolio_id)
+    return [] if account is None else await repository.list_runs(market, limit, account.portfolio_id)
 
 
 async def run_scheduled_ai_simulations(
@@ -332,6 +383,7 @@ async def run_scheduled_ai_simulations(
                         max_positions=portfolio.max_positions,
                         strategy_ids=portfolio.strategy_ids,
                         trigger="scheduled",
+                        portfolio_id=portfolio.portfolio_id,
                     ),
                 ),
                 timeout=run_timeout_seconds,
@@ -386,9 +438,9 @@ async def _save_failed_scheduled_run(
         return
 
 
-async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bool = False) -> AiSimulationOverview:
+async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bool = False, portfolio_id: UUID | None = None) -> AiSimulationOverview:
     repository = ai_simulation_repository(app)
-    portfolio = await repository.get_active(market)
+    portfolio = await resolve_simulation_account(repository, market, portfolio_id)
     if portfolio is None:
         raise LookupError("尚未创建该市场的 AI 模拟组合")
     positions = await repository.list_open_positions(portfolio.portfolio_id)
@@ -585,7 +637,8 @@ async def best_entry_candidates(app: FastAPI, market: Market) -> dict[str, objec
     if market is Market.FUND:
         raise ValueError("今日股票候选仅支持 A 股、港股与美股。")
     repository = ai_simulation_repository(app)
-    portfolio = await repository.get_active(market)
+    accounts = [item for item in await repository.list_active() if item.market == market.value]
+    portfolio = accounts[0] if len(accounts) == 1 else None
     account_exists = portfolio is not None
     if portfolio is None:
         portfolio = AiSimulationPortfolio(
@@ -647,7 +700,7 @@ async def best_entry_candidates(app: FastAPI, market: Market) -> dict[str, objec
         "account_basis": (
             "使用该市场模拟账户的现金、持仓上限、所选策略及个人纪律；各候选独立评估。"
             if account_exists
-            else "尚无模拟账户：按 10 万本金、最多三只和内置风险预算预览，仍遵守已启用纪律。"
+            else "未指定单一模拟账户：按 10 万本金、最多三只和内置风险预算预览，仍遵守已启用纪律。"
         ),
     }
 

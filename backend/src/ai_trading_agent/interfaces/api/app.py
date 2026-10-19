@@ -30,6 +30,8 @@ from ai_trading_agent.infrastructure.config.providers import (
 )
 from ai_trading_agent.interfaces.adapter.environment import load_runtime_environment
 from ai_trading_agent.interfaces.facade.ai_simulation import (
+    ai_simulation_repository,
+    create_simulation_account,
     AiSimulationRunRequest,
     ai_simulation_overview,
     ai_simulation_runs,
@@ -511,12 +513,12 @@ def create_app(
         response_model=AiSimulationOverviewResponse,
         tags=["ai-simulation"],
     )
-    async def get_ai_simulation_overview(market: Market, close_only: bool = False) -> AiSimulationOverviewResponse:
+    async def get_ai_simulation_overview(market: Market, close_only: bool = False, portfolio_id: UUID | None = None) -> AiSimulationOverviewResponse:
         try:
             if market is Market.FUND:
                 raise ValueError("AI 模拟选股当前仅支持 A 股、港股和美股股票样本")
             return AiSimulationOverviewResponse.from_domain(
-                await ai_simulation_overview(app, market, close_only=close_only)
+                await ai_simulation_overview(app, market, close_only=close_only, portfolio_id=portfolio_id)
             )
         except LookupError as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
@@ -527,13 +529,32 @@ def create_app(
                 status_code=503, detail=f"AI 模拟组合估值不可用：{error}"
             ) from error
 
+    @app.get("/api/v1/ai-simulation/accounts", tags=["ai-simulation"])
+    async def list_simulation_accounts():
+        return [{"portfolio_id": str(a.portfolio_id), "market": a.market,
+                 "initial_capital": str(a.initial_capital), "currency": a.currency}
+                for a in await ai_simulation_repository(app).list_active()]
+
+    @app.post("/api/v1/ai-simulation/accounts", status_code=201, tags=["ai-simulation"])
+    async def create_simulation_account_endpoint(payload: AiSimulationRunInput):
+        try:
+            if payload.portfolio_id is not None:
+                raise ValueError("新建账户不能指定已有账户 ID")
+            account = await create_simulation_account(app, AiSimulationRunRequest(
+                market=payload.market, initial_capital=payload.initial_capital,
+                max_positions=payload.max_positions, strategy_ids=tuple(payload.strategy_ids)))
+            return {"portfolio_id": str(account.portfolio_id), "market": account.market,
+                    "initial_capital": str(account.initial_capital), "currency": account.currency}
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
     @app.get(
         "/api/v1/ai-simulation/runs",
         response_model=list[AiSimulationRunResponse],
         tags=["ai-simulation"],
     )
     async def get_ai_simulation_runs(
-        market: Market, limit: int = 14
+        market: Market, limit: int = 14, portfolio_id: UUID | None = None
     ) -> list[AiSimulationRunResponse]:
         if market is Market.FUND:
             raise HTTPException(status_code=422, detail="AI 模拟选股当前仅支持股票市场")
@@ -542,8 +563,10 @@ def create_app(
         try:
             return [
                 AiSimulationRunResponse.from_domain(item)
-                for item in await ai_simulation_runs(app, market, limit)
+                for item in await ai_simulation_runs(app, market, limit, portfolio_id)
             ]
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"AI 模拟历史读取失败：{error}") from error
 
@@ -566,6 +589,7 @@ def create_app(
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
                         strategy_ids=tuple(payload.strategy_ids),
+                        portfolio_id=payload.portfolio_id,
                     ),
                 )
             )
@@ -593,6 +617,7 @@ def create_app(
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
                         strategy_ids=tuple(payload.strategy_ids),
+                        portfolio_id=payload.portfolio_id,
                     ),
                 )
             )

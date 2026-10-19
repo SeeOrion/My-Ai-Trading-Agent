@@ -30,6 +30,11 @@ class SqlAlchemyAiSimulationRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
+    async def get(self, portfolio_id: UUID) -> AiSimulationPortfolio | None:
+        async with self._sessions() as session:
+            record = await session.get(AiSimulationPortfolioRecord, str(portfolio_id))
+            return None if record is None else _portfolio(record)
+
     async def get_active(self, market: Market) -> AiSimulationPortfolio | None:
         async with self._sessions() as session:
             record = await session.scalar(
@@ -179,12 +184,13 @@ class SqlAlchemyAiSimulationRepository:
             await session.refresh(record)
             return _run(record)
 
-    async def list_runs(self, market: Market, limit: int) -> list[AiSimulationRun]:
+    async def list_runs(self, market: Market, limit: int, portfolio_id: UUID | None = None) -> list[AiSimulationRun]:
         async with self._sessions() as session:
             records = (
                 await session.scalars(
                     select(AiSimulationRunRecord)
                     .where(AiSimulationRunRecord.market == market.value)
+                    .where(AiSimulationRunRecord.portfolio_id == str(portfolio_id) if portfolio_id else True)
                     .order_by(AiSimulationRunRecord.completed_at.desc())
                     .limit(limit)
                 )

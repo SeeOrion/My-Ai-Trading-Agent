@@ -42,7 +42,7 @@ def analysis(direction="supportive"):
 
 @pytest.mark.asyncio
 async def test_preview_reuses_entry_checks_caps_three_and_never_writes(monkeypatch):
-    repo = SimpleNamespace(get_active=AsyncMock(return_value=None))  # No write methods!
+    repo = SimpleNamespace(list_active=AsyncMock(return_value=[]))  # No write methods!
     monkeypatch.setattr(facade, "ai_simulation_repository", lambda app: repo)
     monkeypatch.setattr(facade, "builtin_factor_analysis", AsyncMock(return_value=analysis()))
     monkeypatch.setattr(facade, "_discipline_entry_blockers", AsyncMock(return_value=()))
@@ -62,7 +62,7 @@ async def test_preview_reuses_entry_checks_caps_three_and_never_writes(monkeypat
     assert len(result["candidates"]) == 3
     assert result["candidates"][0]["symbol"] == "600000.SH"
     assert not result["excluded"]
-    assert "尚无模拟账户" in result["account_basis"]
+    assert "未指定单一模拟账户" in result["account_basis"]
 
 
 @pytest.mark.asyncio
