@@ -52,6 +52,7 @@ from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_id
 from ai_trading_agent.interfaces.facade.market_assistant import answer_market_question
 from ai_trading_agent.interfaces.facade.market_brief import post_market_brief
 from ai_trading_agent.interfaces.facade.portfolio import (
+    closing_price_repository,
     get_watchlist_item,
     paper_portfolio_overview,
     paper_position_from_input,
@@ -499,7 +500,8 @@ def create_app(
         try:
             positions = await ListPaperPositionsHandler(paper_position_repository(app)).handle()
             return PaperPortfolioOverviewResponse.from_domain(
-                await paper_portfolio_overview(positions, close_only=close_only)
+                await paper_portfolio_overview(positions, close_only=close_only,
+                    cache=closing_price_repository(app) if close_only else None)
             )
         except Exception as error:
             raise HTTPException(status_code=503, detail=f"模拟组合估值不可用：{error}") from error

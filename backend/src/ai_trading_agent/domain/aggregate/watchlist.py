@@ -30,6 +30,7 @@ class PaperPosition:
     quantity: Decimal
     average_cost: Decimal
     notes: str = ""
+    opened_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.quantity <= 0 or self.average_cost <= 0:

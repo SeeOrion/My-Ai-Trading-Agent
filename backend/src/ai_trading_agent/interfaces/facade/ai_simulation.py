@@ -54,7 +54,7 @@ from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimul
 from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
-from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview
+from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview, closing_price_repository
 from ai_trading_agent.interfaces.facade.research_workspace import (
     builtin_factor_analysis,
     historical_bars_provider,
@@ -399,10 +399,12 @@ async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bo
             quantity=item.quantity,
             average_cost=item.average_cost,
             notes="AI 模拟交易持仓",
+            opened_at=item.opened_at,
         )
         for item in positions
     ]
-    paper_overview = await paper_portfolio_overview(paper_positions, close_only=close_only)
+    paper_overview = await paper_portfolio_overview(paper_positions, close_only=close_only,
+                                                   cache=closing_price_repository(app) if close_only else None)
     if close_only and len(paper_overview.valuations) < len(positions):
         raise ValueError("部分持仓收盘价尚不可用；已保留之前显示的估值，请稍后重试。")
     by_id = {item.position.position_id: item for item in paper_overview.valuations}

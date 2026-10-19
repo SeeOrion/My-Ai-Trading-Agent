@@ -10,6 +10,8 @@ from uuid import UUID
 from fastapi import FastAPI
 
 from ai_trading_agent.domain.aggregate.market import Instrument
+from ai_trading_agent.domain.service.monthly_basis import monthly_basis
+from ai_trading_agent.infrastructure.repo.closing_prices import SqlAlchemyClosingPriceRepository
 from ai_trading_agent.domain.aggregate.technical import PriceBar
 from ai_trading_agent.domain.aggregate.watchlist import (
     PaperPortfolioOverview,
@@ -35,6 +37,10 @@ from ai_trading_agent.interfaces.model.http import PaperPositionInput, Watchlist
 
 def watchlist_repository(app: FastAPI) -> SqlAlchemyWatchlistRepository:
     return SqlAlchemyWatchlistRepository(private_session_factory(app))
+
+
+def closing_price_repository(app: FastAPI):
+    return SqlAlchemyClosingPriceRepository(private_session_factory(app))
 
 
 def paper_position_repository(app: FastAPI) -> SqlAlchemyPaperPositionRepository:
@@ -69,7 +75,7 @@ def paper_position_from_input(payload: PaperPositionInput, position_id: UUID) ->
 
 
 async def paper_portfolio_overview(
-    positions: list[PaperPosition], *, now: datetime | None = None, close_only: bool = False
+    positions: list[PaperPosition], *, now: datetime | None = None, close_only: bool = False, cache=None
 ) -> PaperPortfolioOverview:
     """Refresh a small manual portfolio with per-currency performance metrics."""
     observed_at = (now or datetime.now(UTC)).astimezone(UTC)
@@ -78,7 +84,7 @@ async def paper_portfolio_overview(
     results = await asyncio.gather(
         *(
             _value_position_with_references(position, month_start, semaphore,
-                                            close_only=close_only, now=observed_at)
+                                            close_only=close_only, now=observed_at, cache=cache)
             for position in positions
         )
     )
@@ -104,19 +110,20 @@ async def _value_position_with_references(
     position: PaperPosition,
     month_start: date,
     semaphore: asyncio.Semaphore,
-    *, close_only: bool = False, now: datetime | None = None,
+    *, close_only: bool = False, now: datetime | None = None, cache=None,
 ) -> tuple[PaperPositionValuation | None, tuple[str, ...]]:
     """Use a quote for daily change and one prior-month close for the MTD estimate."""
     if close_only:
         try:
             async with semaphore:
-                quote, bars, notice = await closing_quote_and_bars(position.instrument, now)
+                quote, bars, notice = await closing_quote_and_bars(position.instrument, now, cache)
             month_start = bars[-1].session_date.replace(day=1)
             reference = _month_reference_close(bars, month_start)
+            price, ref_date, basis_notice = monthly_basis(position, quote, reference)
             return value_paper_position(
-                position, quote, month_reference_close=reference[1] if reference else None,
-                month_reference_date=reference[0] if reference else None,
-            ), (notice,)
+                position, quote, month_reference_close=price,
+                month_reference_date=ref_date,
+            ), (notice, f"{position.instrument.symbol} {basis_notice}")
         except Exception:
             return None, (f"{position.instrument.symbol} 收盘价暂不可用，未使用盘中价格替代。",)
     async with semaphore:
@@ -132,13 +139,17 @@ async def _value_position_with_references(
     reference_close = None
     reference_date = None
     if isinstance(bars_result, Exception):
-        notices.append(f"{position.instrument.symbol} 月初收盘价不可用，未计算月盈亏。")
+        notices.append(f"{position.instrument.symbol} 月初收盘价暂不可用。")
     else:
         reference = _month_reference_close(bars_result, month_start)
         if reference is None:
-            notices.append(f"{position.instrument.symbol} 缺少月初前收盘价，未计算月盈亏。")
+            notices.append(f"{position.instrument.symbol} 缺少月初前收盘价。")
         else:
             reference_date, reference_close = reference
+    reference_close, reference_date, basis_notice = monthly_basis(
+        position, quote_result,
+        (reference_date, reference_close) if reference_close is not None else None)
+    notices.append(f"{position.instrument.symbol} {basis_notice}")
     return (
         value_paper_position(
             position,
