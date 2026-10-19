@@ -41,7 +41,7 @@ class EvaluateInstrumentDisciplinesHandler:
     def __init__(self, repository: TradingDisciplineRepository) -> None:
         self._repository = repository
 
-    async def handle(self, instrument: Instrument, quote: Quote) -> list[DisciplineDecision]:
+    async def handle(self, instrument: Instrument, quote: Quote, discipline_ids=None) -> list[DisciplineDecision]:
         if quote.instrument != instrument:
             raise ValueError("instrument and quote must refer to the same instrument")
         disciplines = await self._repository.list()
@@ -49,4 +49,5 @@ class EvaluateInstrumentDisciplinesHandler:
             evaluate_discipline(discipline, quote)
             for discipline in disciplines
             if discipline.status is DisciplineStatus.ACTIVE and discipline.instrument == instrument
+            and (discipline_ids is None or discipline.discipline_id in discipline_ids)
         ]

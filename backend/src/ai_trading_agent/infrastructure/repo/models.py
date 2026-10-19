@@ -138,6 +138,7 @@ class AiSimulationPortfolioRecord(Base, TimestampedRecord):
         ForeignKey(f"{SCHEMA}.strategy_profiles.strategy_id"), nullable=True
     )
     strategy_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    discipline_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
 
 

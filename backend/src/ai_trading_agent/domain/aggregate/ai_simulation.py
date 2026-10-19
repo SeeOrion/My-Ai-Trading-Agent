@@ -23,8 +23,11 @@ class AiSimulationPortfolio:
     max_positions: int
     strategy_ids: tuple[UUID, ...] = ()
     status: str = "active"
+    discipline_ids: tuple[UUID, ...] = ()
 
     def __post_init__(self) -> None:
+        if len(set(self.discipline_ids)) != len(self.discipline_ids):
+            raise ValueError("duplicate account disciplines")
         if self.initial_capital <= 0 or self.cash_balance < 0:
             raise ValueError("simulation capital values are invalid")
         if not 1 <= self.max_positions <= 10:

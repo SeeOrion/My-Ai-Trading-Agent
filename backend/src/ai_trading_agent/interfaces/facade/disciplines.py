@@ -27,11 +27,15 @@ async def evaluate_active_disciplines(
     app: FastAPI,
     instrument: Instrument,
     quote: Quote,
+    discipline_ids: tuple[UUID, ...] | None = None,
 ) -> list[DisciplineDecision]:
     """Return reproducible states for active disciplines matching one instrument."""
+    if discipline_ids == ():
+        return []
     return await EvaluateInstrumentDisciplinesHandler(discipline_repository(app)).handle(
         instrument,
         quote,
+        discipline_ids,
     )
 
 

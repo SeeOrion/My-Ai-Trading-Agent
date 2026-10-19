@@ -51,7 +51,7 @@ from ai_trading_agent.domain.service.simulation_exit import (
 )
 from ai_trading_agent.infrastructure.market_data.exchange_calendar import ExchangeTradingCalendar
 from ai_trading_agent.infrastructure.repo.ai_simulation import SqlAlchemyAiSimulationRepository
-from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines
+from ai_trading_agent.interfaces.facade.disciplines import evaluate_active_disciplines, get_discipline
 from ai_trading_agent.interfaces.facade.instruments import resolve_instrument_identity
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.interfaces.facade.portfolio import paper_portfolio_overview, closing_price_repository
@@ -74,6 +74,7 @@ class AiSimulationRunRequest:
     strategy_ids: tuple[UUID, ...] = ()
     trigger: str = "manual"
     portfolio_id: UUID | None = None
+    discipline_ids: tuple[UUID, ...] | None = None
 
 
 def ai_simulation_repository(app: FastAPI) -> SqlAlchemyAiSimulationRepository:
@@ -93,13 +94,14 @@ async def resolve_simulation_account(repository, market, portfolio_id=None):
 
 
 async def create_simulation_account(app: FastAPI, request: AiSimulationRunRequest):
+    await _validate_account_disciplines(app, request.market, request.discipline_ids or ())
     strategies = await _select_strategies(app, request.market, request.strategy_ids)
     _ensure_requested_strategies(request.strategy_ids, strategies)
     if request.market is Market.FUND:
         raise ValueError("AI 模拟账户仅支持股票市场")
     account = AiSimulationPortfolio(uuid4(), request.market.value,
         _currency_for_market(request.market), request.initial_capital, request.initial_capital,
-        request.max_positions, request.strategy_ids)
+        request.max_positions, request.strategy_ids, discipline_ids=request.discipline_ids or ())
     return await ai_simulation_repository(app).save_portfolio(account)
 
 
@@ -112,6 +114,11 @@ async def _with_account_lock(app, request, operation):
                                                 request.portfolio_id)
     if account is not None:
         request = replace(request, portfolio_id=account.portfolio_id)
+    selected = request.discipline_ids
+    if selected is None:
+        selected = account.discipline_ids if account is not None else ()
+    await _validate_account_disciplines(app, request.market, selected)
+    request = replace(request, discipline_ids=selected)
     locks = getattr(app.state, "simulation_account_locks", None)
     if locks is None:
         locks = app.state.simulation_account_locks = {}
@@ -120,6 +127,15 @@ async def _with_account_lock(app, request, operation):
         raise ValueError("该账户正在复核或更新，请等待完成后再操作")
     async with lock:
         return await operation(app, request)
+
+
+async def _validate_account_disciplines(app, market, discipline_ids):
+    if len(set(discipline_ids)) != len(discipline_ids):
+        raise ValueError("不能重复选择纪律")
+    for identifier in discipline_ids:
+        rule = await get_discipline(app, identifier)
+        if rule is None or rule.status.value != "active" or rule.instrument.market != market:
+            raise ValueError("所选纪律不存在、未启用或不属于账户市场，请在账户设置中重新选择")
 
 
 async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> AiSimulationOverview:
@@ -138,6 +154,7 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
             cash_balance=request.initial_capital,
             max_positions=request.max_positions,
             strategy_ids=tuple(item.strategy_id for item in strategies),
+            discipline_ids=request.discipline_ids or (),
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions: list[AiSimulationPosition] = []
@@ -258,6 +275,7 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
             cash_balance=portfolio.cash_balance - execution.cash_required,
             max_positions=portfolio.max_positions,
             strategy_ids=portfolio.strategy_ids,
+            discipline_ids=portfolio.discipline_ids,
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions.append(position)
@@ -382,6 +400,7 @@ async def run_scheduled_ai_simulations(
                         initial_capital=portfolio.initial_capital,
                         max_positions=portfolio.max_positions,
                         strategy_ids=portfolio.strategy_ids,
+                        discipline_ids=portfolio.discipline_ids,
                         trigger="scheduled",
                         portfolio_id=portfolio.portfolio_id,
                     ),
@@ -531,6 +550,8 @@ async def _save_reconfigured_portfolio(
         strategy_ids=tuple(item.strategy_id for item in strategies),
         open_position_count=len(positions),
     )
+    updated = replace(updated, discipline_ids=(portfolio.discipline_ids
+        if request.discipline_ids is None else request.discipline_ids))
     return portfolio if updated == portfolio else await repository.save_portfolio(updated)
 
 
@@ -580,7 +601,7 @@ def _strategy_factor_context(strategy: StrategyProfile, observations: tuple[obje
     return f"策略「{strategy.name}」：支持 {supportive} 项，逆风 {adverse} 项。"
 
 
-async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
+async def _discipline_entry_blockers(app: FastAPI, candidate, discipline_ids=()) -> tuple[str, ...]:  # type: ignore[no-untyped-def]
     observation = candidate.observation
     quote = Quote(
         instrument=observation.instrument,
@@ -588,7 +609,7 @@ async def _discipline_entry_blockers(app: FastAPI, candidate) -> tuple[str, ...]
         observed_at=observation.observed_at,
         source=observation.source,
     )
-    decisions = await evaluate_active_disciplines(app, observation.instrument, quote)
+    decisions = await evaluate_active_disciplines(app, observation.instrument, quote, discipline_ids)
     return disciplined_entry_blockers(decisions)
 
 
@@ -616,7 +637,7 @@ async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
         max_position_percent=_max_position_percent(strategies),
         lot_size=minimum_trade_unit(observation.instrument),
     )
-    blockers = await _discipline_entry_blockers(app, candidate)
+    blockers = await _discipline_entry_blockers(app, candidate, portfolio.discipline_ids)
     quote = Quote(
         instrument=observation.instrument,
         last_price=observation.last_price,
@@ -758,7 +779,7 @@ async def _apply_position_exits(
             )
             active_positions.append(await repository.save_position(position))
             continue
-        decisions = await evaluate_active_disciplines(app, position.instrument, quote)
+        decisions = await evaluate_active_disciplines(app, position.instrument, quote, portfolio.discipline_ids)
         exit_decision = next(
             (item for item in decisions if item.status is DisciplineDecisionStatus.EXIT),
             None,
@@ -1037,6 +1058,7 @@ async def _execute_position_sale(
         cash_balance=portfolio.cash_balance + execution.cash_proceeds,
         max_positions=portfolio.max_positions,
         strategy_ids=portfolio.strategy_ids,
+        discipline_ids=portfolio.discipline_ids,
         status=portfolio.status,
     )
     updated_portfolio = await repository.save_portfolio(updated_portfolio)

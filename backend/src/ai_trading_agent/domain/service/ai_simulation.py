@@ -75,6 +75,7 @@ def reconfigure_simulation_portfolio(
         max_positions=max_positions,
         strategy_ids=strategy_ids,
         status=portfolio.status,
+        discipline_ids=portfolio.discipline_ids,
     )
 
 

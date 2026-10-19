@@ -704,6 +704,7 @@ class PaperPortfolioOverviewResponse(BaseModel):
 
 
 class AiSimulationRunInput(BaseModel):
+    discipline_ids: list[UUID] | None = Field(default=None, max_length=100)
     portfolio_id: UUID | None = None
     market: Market
     initial_capital: Decimal = Field(gt=0)
@@ -808,6 +809,7 @@ class AiSimulationRunResponse(BaseModel):
 
 
 class AiSimulationOverviewResponse(BaseModel):
+    discipline_ids: list[UUID]
     portfolio_id: UUID
     market: Market
     currency: str
@@ -843,6 +845,7 @@ class AiSimulationOverviewResponse(BaseModel):
             month_to_date_pnl=overview.month_to_date_pnl,
             max_positions=portfolio.max_positions,
             strategy_ids=list(portfolio.strategy_ids),
+            discipline_ids=list(portfolio.discipline_ids),
             observed_at=overview.observed_at.isoformat(),
             positions=[
                 AiSimulationPositionResponse(

@@ -542,7 +542,7 @@ def create_app(
                 raise ValueError("新建账户不能指定已有账户 ID")
             account = await create_simulation_account(app, AiSimulationRunRequest(
                 market=payload.market, initial_capital=payload.initial_capital,
-                max_positions=payload.max_positions, strategy_ids=tuple(payload.strategy_ids)))
+                max_positions=payload.max_positions, discipline_ids=None if payload.discipline_ids is None else tuple(payload.discipline_ids), strategy_ids=tuple(payload.strategy_ids)))
             return {"portfolio_id": str(account.portfolio_id), "market": account.market,
                     "initial_capital": str(account.initial_capital), "currency": account.currency}
         except ValueError as error:
@@ -588,7 +588,7 @@ def create_app(
                         market=payload.market,
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
-                        strategy_ids=tuple(payload.strategy_ids),
+                        discipline_ids=None if payload.discipline_ids is None else tuple(payload.discipline_ids), strategy_ids=tuple(payload.strategy_ids),
                         portfolio_id=payload.portfolio_id,
                     ),
                 )
@@ -616,7 +616,7 @@ def create_app(
                         market=payload.market,
                         initial_capital=payload.initial_capital,
                         max_positions=payload.max_positions,
-                        strategy_ids=tuple(payload.strategy_ids),
+                        discipline_ids=None if payload.discipline_ids is None else tuple(payload.discipline_ids), strategy_ids=tuple(payload.strategy_ids),
                         portfolio_id=payload.portfolio_id,
                     ),
                 )
