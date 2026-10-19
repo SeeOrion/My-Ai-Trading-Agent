@@ -24,6 +24,15 @@ _CALENDAR_NAMES = {
 class ExchangeTradingCalendar:
     """Use maintained exchange schedules and fail closed outside their known range."""
 
+    def latest_completed_session(self, market: Market, now: datetime) -> date:
+        calendar = _calendar(market)
+        instant = _aware_utc(now)
+        session = calendar.date_to_session(Timestamp(instant.astimezone(calendar.tz).date()),
+                                           direction="previous")
+        if calendar.session_close(session).to_pydatetime() > instant:
+            session = calendar.previous_session(session)
+        return session.date()
+
     def completed_close(self, market: Market, session_date: date, now: datetime) -> datetime | None:
         calendar = _calendar(market)
         try:

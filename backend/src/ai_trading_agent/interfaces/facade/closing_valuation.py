@@ -3,12 +3,48 @@
 import asyncio
 from datetime import datetime
 
+from ai_trading_agent.domain.ability.closing_prices import ClosingPriceRepository, ClosingPrices
 from ai_trading_agent.domain.aggregate.market import Instrument, Quote
 from ai_trading_agent.infrastructure.market_data.exchange_calendar import ExchangeTradingCalendar
 from ai_trading_agent.interfaces.facade.research_workspace import historical_bars_provider
 
 
-async def closing_quote_and_bars(instrument: Instrument, now: datetime):
+async def closing_quote_and_bars(
+    instrument: Instrument, now: datetime, cache: ClosingPriceRepository | None = None
+):
+    note = ""
+    try:
+        quote, bars, note = await _fetch_closing_quote_and_bars(instrument, now)
+    except Exception:
+        snapshot = await cache.get(instrument) if cache is not None else None
+        target = ExchangeTradingCalendar().latest_completed_session(instrument.market, now)
+        if snapshot is None or not snapshot.bars or snapshot.bars[-1].session_date != target:
+            raise
+        bars = snapshot.bars
+        quote = Quote(
+            instrument,
+            bars[-1].close_price,
+            ExchangeTradingCalendar().completed_close(instrument.market, target, now),
+            snapshot.source + ":cached",
+            previous_close=bars[-2].close_price if len(bars) > 1 else None,
+        )
+        return (
+            quote,
+            bars,
+            (
+                f"{instrument.symbol} 刷新失败，沿用 {target} 已保存收盘价；"
+                f"来源 {snapshot.source}，抓取时间 {snapshot.fetched_at.isoformat()}。"
+            ),
+        )
+    if cache is not None:
+        try:
+            await cache.save(ClosingPrices(instrument, quote.source, now, bars))
+        except Exception:
+            note += " 本次价格有效，但数据库缓存保存失败。"
+    return quote, bars, note
+
+
+async def _fetch_closing_quote_and_bars(instrument: Instrument, now: datetime):
     provider = historical_bars_provider(instrument, unadjusted=True)
     for attempt in range(2):
         try:
