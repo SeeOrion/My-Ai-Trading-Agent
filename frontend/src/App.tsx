@@ -7,6 +7,7 @@ import {
   updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperPortfolioOverview, PaperPortfolioOverview, PaperPositionValuation,
+  AiSimulationAccount, fetchAiSimulationAccounts, createAiSimulationAccount,
   AiSimulationOverview, AiSimulationRun, AiSimulationRunInput, fetchAiSimulationOverview, fetchAiSimulationRuns, runAiSimulation, updateAiSimulationSettings,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
   fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief, resolveInstrument,
@@ -101,23 +102,23 @@ const fundResearchInstrumentTypes: readonly Exclude<InstrumentType, "option">[] 
 type AiSimulationMarket = Exclude<Market, "fund">;
 type AiSimulationWorkspaceData = { overview: AiSimulationOverview | null; runs: AiSimulationRun[]; runHistoryError: string | null; loadedAt: number; };
 
-const aiSimulationCache = new Map<AiSimulationMarket, AiSimulationWorkspaceData>();
-const aiSimulationRequests = new Map<AiSimulationMarket, Promise<AiSimulationWorkspaceData>>();
+const aiSimulationCache = new Map<string, AiSimulationWorkspaceData>();
+const aiSimulationRequests = new Map<string, Promise<AiSimulationWorkspaceData>>();
 const aiSimulationCacheTtlMs = 30_000;
 
 function isMissingAiSimulationAccount(error: unknown) {
   return error instanceof Error && error.message.includes("尚未创建该市场的 AI 模拟组合");
 }
 
-async function loadAiSimulationWorkspaceData(market: AiSimulationMarket) {
-  const cached = aiSimulationCache.get(market);
+async function loadAiSimulationWorkspaceData(market: AiSimulationMarket, accountId: string) {
+  const cached = aiSimulationCache.get(accountId);
   if (cached && Date.now() - cached.loadedAt < aiSimulationCacheTtlMs) return cached;
-  const pending = aiSimulationRequests.get(market);
+  const pending = aiSimulationRequests.get(accountId);
   if (pending) return pending;
   const request = (async () => {
     const [overviewResult, runsResult] = await Promise.allSettled([
-      fetchAiSimulationOverview(market),
-      fetchAiSimulationRuns(market)
+      fetchAiSimulationOverview(market, false, accountId),
+      fetchAiSimulationRuns(market, accountId)
     ]);
     if (overviewResult.status === "rejected" && !isMissingAiSimulationAccount(overviewResult.reason)) throw overviewResult.reason;
     const data: AiSimulationWorkspaceData = {
@@ -126,15 +127,15 @@ async function loadAiSimulationWorkspaceData(market: AiSimulationMarket) {
       runHistoryError: runsResult.status === "rejected" ? errorText(runsResult.reason, "运行历史读取失败") : null,
       loadedAt: Date.now()
     };
-    aiSimulationCache.set(market, data);
+    aiSimulationCache.set(accountId, data);
     return data;
   })();
-  aiSimulationRequests.set(market, request);
-  try { return await request; } finally { aiSimulationRequests.delete(market); }
+  aiSimulationRequests.set(accountId, request);
+  try { return await request; } finally { aiSimulationRequests.delete(accountId); }
 }
 
-function invalidateAiSimulationWorkspaceData(market: AiSimulationMarket) {
-  aiSimulationCache.delete(market);
+function invalidateAiSimulationWorkspaceData(accountId: string) {
+  aiSimulationCache.delete(accountId);
 }
 
 function errorText(error: unknown, fallback: string) {
@@ -650,8 +651,8 @@ function localizeDataForDisplay(value: unknown): unknown {
 
 function PaperPortfolioWorkspace({ strategies, onOpenDisciplines }: { strategies: Strategy[]; onOpenDisciplines: () => void }) {
   const [workspace, setWorkspace] = useState<"manual" | "ai">("manual");
-  useEffect(() => { void loadAiSimulationWorkspaceData("a_share").catch(() => undefined); }, []);
-  return <section className="paper-portfolio-workspace"><div className="portfolio-mode-switch" role="tablist" aria-label="模拟持仓模式"><button className={workspace === "manual" ? "secondary active" : "secondary"} onClick={() => setWorkspace("manual")}>手动模拟持仓</button><button className={workspace === "ai" ? "secondary active" : "secondary"} onClick={() => setWorkspace("ai")}>AI 模拟选股与交易</button></div>{workspace === "manual" ? <ManualPaperPortfolioWorkspace /> : <AiSimulationWorkspace strategies={strategies} onOpenDisciplines={onOpenDisciplines} />}</section>;
+
+  return <section className="paper-portfolio-workspace"><div className="portfolio-mode-switch" role="tablist" aria-label="模拟持仓模式"><button className={workspace === "manual" ? "secondary active" : "secondary"} onClick={() => setWorkspace("manual")}>手动模拟持仓</button><button className={workspace === "ai" ? "secondary active" : "secondary"} onClick={() => setWorkspace("ai")}>AI 模拟选股与交易</button></div>{workspace === "manual" ? <ManualPaperPortfolioWorkspace /> : <AiSimulationAccounts strategies={strategies} onOpenDisciplines={onOpenDisciplines} />}</section>;
 }
 
 function ManualPaperPortfolioWorkspace() {
@@ -677,11 +678,38 @@ function normalizeEditableMoney(value: string) {
 function AiSimulationAccountSettings({ market, initialCapital, maxPositions, strategyIds, strategies, setMarket, setInitialCapital, setMaxPositions, setStrategyIds, onOpenDisciplines }: { market: AiSimulationMarket; initialCapital: string; maxPositions: number; strategyIds: string[]; strategies: Strategy[]; setMarket: (value: AiSimulationMarket) => void; setInitialCapital: (value: string) => void; setMaxPositions: (value: number) => void; setStrategyIds: (value: string[]) => void; onOpenDisciplines: () => void; }) {
   const availableStrategies = strategies.filter((item) => item.status === "active" && item.markets.includes(market));
   function toggleStrategy(strategyId: string) { setStrategyIds(strategyIds.includes(strategyId) ? strategyIds.filter((item) => item !== strategyId) : [...strategyIds, strategyId]); }
-  return <div className="ai-simulation-controls"><label>市场<select value={market} onChange={(event) => setMarket(event.target.value as AiSimulationMarket)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label><label>初始本金<input type="number" min="1" step="1" value={initialCapital} onChange={(event) => setInitialCapital(event.target.value)} /></label><label>最多持仓<select value={maxPositions} onChange={(event) => setMaxPositions(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((value) => <option value={value} key={value}>{value} 只</option>)}</select></label><fieldset className="ai-strategy-selector"><legend>联合注入策略</legend>{availableStrategies.length ? availableStrategies.map((strategy) => <label className="check" key={strategy.strategy_id}><input type="checkbox" checked={strategyIds.includes(strategy.strategy_id)} onChange={() => toggleStrategy(strategy.strategy_id)} />{strategy.name}（上限 {strategy.max_position_pct}%）</label>) : <small>当前市场暂无已启用策略，将使用内置风险预算。</small>}<small>仅参考全部勾选策略；仓位上限取其中最严格的值。</small></fieldset><fieldset className="ai-discipline-control"><legend>个人纪律（可选）</legend><small>未配置适用纪律时，不启用严格纪律模式；AI 仍会按因子、策略与风险预算判断。为候选标的创建并启用纪律后，系统会严格遵守其买入条件。</small><button type="button" className="secondary" onClick={onOpenDisciplines}>新建 / 编辑个人纪律</button></fieldset></div>;
+  return <div className="ai-simulation-controls"><label>市场<select disabled title="账户市场创建后不可更改，请新建其他市场账户" value={market} onChange={(event) => setMarket(event.target.value as AiSimulationMarket)}><option value="a_share">A 股</option><option value="hong_kong">港股</option><option value="united_states">美股</option></select></label><label>初始本金<input type="number" min="1" step="1" value={initialCapital} onChange={(event) => setInitialCapital(event.target.value)} /></label><label>最多持仓<select value={maxPositions} onChange={(event) => setMaxPositions(Number(event.target.value))}>{[1, 2, 3, 4, 5].map((value) => <option value={value} key={value}>{value} 只</option>)}</select></label><fieldset className="ai-strategy-selector"><legend>联合注入策略</legend>{availableStrategies.length ? availableStrategies.map((strategy) => <label className="check" key={strategy.strategy_id}><input type="checkbox" checked={strategyIds.includes(strategy.strategy_id)} onChange={() => toggleStrategy(strategy.strategy_id)} />{strategy.name}（上限 {strategy.max_position_pct}%）</label>) : <small>当前市场暂无已启用策略，将使用内置风险预算。</small>}<small>仅参考全部勾选策略；仓位上限取其中最严格的值。</small></fieldset><fieldset className="ai-discipline-control"><legend>个人纪律（可选）</legend><small>未配置适用纪律时，不启用严格纪律模式；AI 仍会按因子、策略与风险预算判断。为候选标的创建并启用纪律后，系统会严格遵守其买入条件。</small><button type="button" className="secondary" onClick={onOpenDisciplines}>新建 / 编辑个人纪律</button></fieldset></div>;
 }
 
-function AiSimulationWorkspace({ strategies, onOpenDisciplines }: { strategies: Strategy[]; onOpenDisciplines: () => void }) {
+function AiSimulationAccounts({ strategies, onOpenDisciplines }: { strategies: Strategy[]; onOpenDisciplines: () => void }) {
+  const [accounts, setAccounts] = useState<AiSimulationAccount[]>([]);
+  const [selected, setSelected] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [market, setMarket] = useState<AiSimulationMarket>("a_share");
+  const [capital, setCapital] = useState("100000");
+  async function reload() {
+    setLoading(true); setError(null);
+    try { const items = await fetchAiSimulationAccounts(); setAccounts(items); setSelected(current => items.some(a => a.portfolio_id === current) ? current : items[0]?.portfolio_id ?? ""); }
+    catch (e) { setError(errorText(e, "账户列表读取失败")); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void reload(); }, []);
+  async function create(event: FormEvent) {
+    event.preventDefault(); if (busy) return; setBusy(true); setError(null);
+    try { const item = await createAiSimulationAccount({ market, initial_capital: capital, max_positions: 3, strategy_ids: [] }); setAccounts(items => [...items, item]); setSelected(item.portfolio_id); setCreating(false); }
+    catch (e) { setError(errorText(e, "创建账户失败")); }
+    finally { setBusy(false); }
+  }
+  const account = accounts.find(a => a.portfolio_id === selected);
+  return <section><section className="panel"><div className="panel-head"><h2>我的模拟账户</h2><div className="ai-account-actions"><button className="secondary" disabled={loading || busy} onClick={() => void reload()}>刷新账户</button><button className="primary" disabled={busy} onClick={() => setCreating(true)}>新建账户</button></div></div><label>切换账户<select value={selected} disabled={busy || loading} onChange={e => setSelected(e.target.value)}><option value="" disabled>{loading ? "正在读取…" : "请选择账户"}</option>{accounts.map((a, index) => <option key={a.portfolio_id} value={a.portfolio_id}>{marketLabels[a.market]}账户 {index + 1} · {a.portfolio_id.slice(0, 8)}</option>)}</select></label><p>账户的本金、策略、持仓与运行历史独立保存。启用的账户均按所属市场交易时段定时复核；切换页面不会暂停其他账户。个人纪律仍共享并严格执行。</p>{error && <div className="notice">{error}</div>}{creating && <form onSubmit={create}><div className="form-row"><label>市场<select value={market} onChange={e => setMarket(e.target.value as AiSimulationMarket)}>{(["a_share", "hong_kong", "united_states"] as const).map(m => <option key={m} value={m}>{marketLabels[m]}</option>)}</select></label><label>初始本金<input required type="number" min="1" step="0.01" value={capital} onChange={e => setCapital(e.target.value)} /></label></div><p>只创建账户，不立即买卖；创建后可在账户设置中选择策略、持仓上限。</p><button className="primary" disabled={busy}>{busy ? "正在创建…" : "创建模拟账户"}</button><button type="button" className="secondary" disabled={busy} onClick={() => setCreating(false)}>取消</button></form>}</section>{account && <AiSimulationWorkspace key={account.portfolio_id} account={account} strategies={strategies} onOpenDisciplines={onOpenDisciplines} />}</section>;
+}
+
+function AiSimulationWorkspace({ strategies, onOpenDisciplines, account }: { strategies: Strategy[]; onOpenDisciplines: () => void; account: AiSimulationAccount }) {
+  const [market, setMarket] = useState<AiSimulationMarket>(account.market);
+  const accountId = account.portfolio_id;
   const [initialCapital, setInitialCapital] = useState("100000");
   const [maxPositions, setMaxPositions] = useState(3);
   const [strategyIds, setStrategyIds] = useState<string[]>([]);
@@ -705,11 +733,11 @@ function AiSimulationWorkspace({ strategies, onOpenDisciplines }: { strategies: 
     closingView.current = true;
     setRefreshingPrices(true); setMessage(null);
     try {
-      const result = await fetchAiSimulationOverview(market, closeOnly);
+      const result = await fetchAiSimulationOverview(market, closeOnly, accountId);
       if (requestId !== priceRequest.current) return;
       setOverview(result);
       closingView.current = closeOnly;
-      invalidateAiSimulationWorkspaceData(market);
+      invalidateAiSimulationWorkspaceData(accountId);
       setMessage(closeOnly ? "已刷新最近可用收盘价，盈亏截至提示中的交易日；未执行模拟交易。" : "已刷新最新行情；未执行模拟交易。");
     } catch (error) {
       if (requestId !== priceRequest.current) return;
@@ -717,18 +745,18 @@ function AiSimulationWorkspace({ strategies, onOpenDisciplines }: { strategies: 
       setMessage(errorText(error, "价格刷新失败，保留之前的估值。"));
     } finally { if (requestId === priceRequest.current) setRefreshingPrices(false); }
   }
-  const payload = (): AiSimulationRunInput => ({ market, initial_capital: initialCapital, max_positions: maxPositions, strategy_ids: strategyIds });
+  const payload = (): AiSimulationRunInput => ({ portfolio_id: accountId, market, initial_capital: initialCapital, max_positions: maxPositions, strategy_ids: strategyIds });
   const applyOverview = (result: AiSimulationOverview) => { setOverview(result); setInitialCapital(normalizeEditableMoney(result.initial_capital)); setMaxPositions(result.max_positions); setStrategyIds(result.strategy_ids); };
-  async function loadRunHistory() { try { const runs = await fetchAiSimulationRuns(market); setRunHistory(runs); setRunHistoryError(null); return runs; } catch (error) { setRunHistoryError(errorText(error, "运行历史读取失败")); return runHistory; } }
-  async function refreshScheduledWorkspace() { if (closingView.current) { await loadRunHistory(); return; } invalidateAiSimulationWorkspaceData(market); try { const data = await loadAiSimulationWorkspaceData(market); if (closingView.current) return; if (data.overview) applyOverview(data.overview); setRunHistory(data.runs); setRunHistoryError(data.runHistoryError); } catch (error) { setRunHistoryError(errorText(error, "运行历史读取失败")); } }
-  useEffect(() => { let active = true; priceRequest.current++; closingView.current = false; setRefreshingPrices(false); setAccountLoading(true); setLoadError(null); setOverview(null); setRunHistory([]); setRunHistoryError(null); setMessage(null); setView("account"); void loadAiSimulationWorkspaceData(market).then((data) => { if (!active) return; if (data.overview) applyOverview(data.overview); setRunHistory(data.runs); setRunHistoryError(data.runHistoryError); }).catch((error) => { if (active) setLoadError(errorText(error, "AI 模拟账户读取失败")); }).finally(() => { if (active) setAccountLoading(false); }); return () => { active = false; priceRequest.current++; }; }, [market, loadVersion]);
+  async function loadRunHistory() { try { const runs = await fetchAiSimulationRuns(market, accountId); setRunHistory(runs); setRunHistoryError(null); return runs; } catch (error) { setRunHistoryError(errorText(error, "运行历史读取失败")); return runHistory; } }
+  async function refreshScheduledWorkspace() { if (closingView.current) { await loadRunHistory(); return; } invalidateAiSimulationWorkspaceData(accountId); try { const data = await loadAiSimulationWorkspaceData(market, accountId); if (closingView.current) return; if (data.overview) applyOverview(data.overview); setRunHistory(data.runs); setRunHistoryError(data.runHistoryError); } catch (error) { setRunHistoryError(errorText(error, "运行历史读取失败")); } }
+  useEffect(() => { let active = true; priceRequest.current++; closingView.current = false; setRefreshingPrices(false); setAccountLoading(true); setLoadError(null); setOverview(null); setRunHistory([]); setRunHistoryError(null); setMessage(null); setView("account"); void loadAiSimulationWorkspaceData(market, accountId).then((data) => { if (!active) return; if (data.overview) applyOverview(data.overview); setRunHistory(data.runs); setRunHistoryError(data.runHistoryError); }).catch((error) => { if (active) setLoadError(errorText(error, "AI 模拟账户读取失败")); }).finally(() => { if (active) setAccountLoading(false); }); return () => { active = false; priceRequest.current++; }; }, [market, loadVersion]);
   useEffect(() => { const timer = window.setInterval(() => { void refreshScheduledWorkspace(); }, 60_000); return () => window.clearInterval(timer); }, [market]);
-  async function run() { setRunning(true); setMessage(null); try { const result = await runAiSimulation(payload()); closingView.current = false; applyOverview(result); const runs = await loadRunHistory(); aiSimulationCache.set(market, { overview: result, runs, runHistoryError: null, loadedAt: Date.now() }); setMessage(result.positions.length ? "AI 已完成本轮模拟筛选与风险预算分配。当前账户设置已同步。" : "当前账户设置已同步；本轮没有候选满足全部模拟建仓条件，未创建交易。"); } catch (error) { setMessage(errorText(error, "AI 模拟选股失败")); } finally { setRunning(false); } }
-  async function saveSettings() { setSavingSettings(true); setMessage(null); try { const result = await updateAiSimulationSettings(payload()); closingView.current = false; applyOverview(result); aiSimulationCache.set(market, { overview: result, runs: runHistory, runHistoryError, loadedAt: Date.now() }); setView("account"); setMessage("AI 模拟账户设置已同步；既有持仓和运行记录已保留，未执行新的模拟买入。"); } catch (error) { setMessage(errorText(error, "AI 模拟账户更新失败")); } finally { setSavingSettings(false); } }
+  async function run() { setRunning(true); setMessage(null); try { const result = await runAiSimulation(payload()); closingView.current = false; applyOverview(result); const runs = await loadRunHistory(); aiSimulationCache.set(accountId, { overview: result, runs, runHistoryError: null, loadedAt: Date.now() }); setMessage(result.positions.length ? "AI 已完成本轮模拟筛选与风险预算分配。当前账户设置已同步。" : "当前账户设置已同步；本轮没有候选满足全部模拟建仓条件，未创建交易。"); } catch (error) { setMessage(errorText(error, "AI 模拟选股失败")); } finally { setRunning(false); } }
+  async function saveSettings() { setSavingSettings(true); setMessage(null); try { const result = await updateAiSimulationSettings(payload()); closingView.current = false; applyOverview(result); aiSimulationCache.set(accountId, { overview: result, runs: runHistory, runHistoryError, loadedAt: Date.now() }); setView("account"); setMessage("AI 模拟账户设置已同步；既有持仓和运行记录已保留，未执行新的模拟买入。"); } catch (error) { setMessage(errorText(error, "AI 模拟账户更新失败")); } finally { setSavingSettings(false); } }
   function changeMarket(nextMarket: AiSimulationMarket) { setStrategyIds((current) => current.filter((strategyId) => strategies.some((item) => item.strategy_id === strategyId && item.status === "active" && item.markets.includes(nextMarket)))); setMarket(nextMarket); }
   const settings = <AiSimulationAccountSettings market={market} initialCapital={initialCapital} maxPositions={maxPositions} strategyIds={strategyIds} strategies={strategies} setMarket={changeMarket} setInitialCapital={setInitialCapital} setMaxPositions={setMaxPositions} setStrategyIds={setStrategyIds} onOpenDisciplines={onOpenDisciplines} />;
   if (accountLoading) return <section className="panel ai-simulation-empty"><h3>正在载入 AI 模拟账户</h3><p>正在读取已保存的账户、持仓估值与最近运行记录；账户页会在数据返回后自动显示。</p></section>;
-  if (loadError) return <section className="panel ai-simulation-empty"><h3>AI 模拟账户暂时不可用</h3><p>{loadError}</p><button className="secondary" onClick={() => { invalidateAiSimulationWorkspaceData(market); setLoadVersion((version) => version + 1); }}>重新读取</button></section>;
+  if (loadError) return <section className="panel ai-simulation-empty"><h3>AI 模拟账户暂时不可用</h3><p>{loadError}</p><button className="secondary" onClick={() => { invalidateAiSimulationWorkspaceData(accountId); setLoadVersion((version) => version + 1); }}>重新读取</button></section>;
   if (overview === null) return <section className="panel"><div className="panel-head"><div><p className="eyebrow">可审计的 AI 模拟交易</p><h2>创建 AI 模拟账户</h2><p>设置账户后执行首轮模拟筛选。账户建立后，这些参数会迁移至账户设置，不会持续占用主页面。</p></div></div>{settings}<div className="ai-simulation-actions"><button className="primary" onClick={() => void run()} disabled={running}>{running ? "AI 正在筛选与估值…" : "创建账户并执行首轮模拟"}</button><small>仅创建模拟记录，不会连接券商或产生真实委托。</small></div>{message && <p className="ai-simulation-message">{message}</p>}</section>;
   if (view === "settings") return <section className="panel"><div className="panel-head"><div><p className="eyebrow">AI 模拟账户设置</p><h2>AI 模拟账户设置</h2><p>修改本金、持仓上限或注入策略不会执行新交易；已有持仓和运行记录会保留。</p></div><button className="secondary" onClick={() => setView("account")}>返回账户</button></div>{settings}<div className="ai-simulation-actions"><button className="primary" onClick={() => void saveSettings()} disabled={savingSettings}>{savingSettings ? "正在同步账户…" : "保存账户设置"}</button></div>{message && <p className="ai-simulation-message">{message}</p>}</section>;
   return <section className="ai-simulation-workspace"><section className="panel"><div className="panel-head"><div><h3>持仓价格刷新</h3><p>刷新只重新估值，不执行交易。收盘模式按各交易所最近已结束且有数据的交易日计算；具体日期见持仓提示。</p></div><div className="ai-account-actions"><button className="primary" disabled={refreshingPrices || running} onClick={() => void refreshPrices(true)}>{refreshingPrices ? "正在刷新…" : "刷新收盘价"}</button><button className="secondary" disabled={refreshingPrices || running} onClick={() => void refreshPrices(false)}>刷新最新行情</button></div></div></section><AiSimulationOverviewView overview={overview} onOpenSettings={() => setView("settings")} onRun={() => void run()} running={running || refreshingPrices} />{message && <p className="ai-simulation-message">{message}</p>}<AiSimulationRunHistory runs={runHistory} currency={overview.currency} error={runHistoryError} onRefresh={() => void refreshScheduledWorkspace()} /></section>;
