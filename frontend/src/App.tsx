@@ -7,7 +7,7 @@ import {
   updateStrategy, fetchTechnicalStudy, TechnicalStudy, TechnicalTimeframe, WatchlistInput, WatchlistItem,
   createWatchlistItem, deleteWatchlistItem, fetchWatchlist, PaperPositionInput, PaperPosition,
   createPaperPosition, deletePaperPosition, fetchPaperPositions, fetchPaperPortfolioOverview, PaperPortfolioOverview, PaperPositionValuation,
-  AiSimulationAccount, fetchAiSimulationAccounts, createAiSimulationAccount,
+  AiSimulationAccount, fetchAiSimulationAccounts, createAiSimulationAccount, deleteAiSimulationAccount,
   AiSimulationOverview, AiSimulationRun, AiSimulationRunInput, fetchAiSimulationOverview, fetchAiSimulationRuns, runAiSimulation, updateAiSimulationSettings,
   fetchWatchlistAnalyses, fetchWatchlistAnalysis, refreshWatchlistAnalysis, WatchlistAnalysis, Quote,
   fetchWatchlistDeepDive, WatchlistFinancialDetail, fetchPostMarketBrief, PostMarketBrief, resolveInstrument,
@@ -707,7 +707,19 @@ function AiSimulationAccounts({ strategies, onOpenDisciplines }: { strategies: S
     finally { setBusy(false); }
   }
   const account = accounts.find(a => a.portfolio_id === selected);
-  return <section><section className="panel"><div className="panel-head"><h2>我的模拟账户</h2><div className="ai-account-actions"><button className="secondary" disabled={loading || busy} onClick={() => void reload()}>刷新账户</button><button className="primary" disabled={busy} onClick={() => setCreating(true)}>新建账户</button></div></div><label>切换账户<select value={selected} disabled={busy || loading} onChange={e => setSelected(e.target.value)}><option value="" disabled>{loading ? "正在读取…" : "请选择账户"}</option>{accounts.map((a, index) => <option key={a.portfolio_id} value={a.portfolio_id}>{marketLabels[a.market]}账户 {index + 1} · {a.portfolio_id.slice(0, 8)}</option>)}</select></label><p>账户的本金、策略、持仓与运行历史独立保存。启用的账户均按所属市场交易时段定时复核；切换页面不会暂停其他账户。策略与个人纪律按账户独立选择，行情、资讯和定时复核机制共享。</p>{error && <div className="notice">{error}</div>}{creating && <form onSubmit={create}><div className="form-row"><label>市场<select value={market} onChange={e => setMarket(e.target.value as AiSimulationMarket)}>{(["a_share", "hong_kong", "united_states"] as const).map(m => <option key={m} value={m}>{marketLabels[m]}</option>)}</select></label><label>初始本金<input required type="number" min="1" step="0.01" value={capital} onChange={e => setCapital(e.target.value)} /></label></div><p>只创建账户，不立即买卖；创建后可在账户设置中选择策略、持仓上限。</p><button className="primary" disabled={busy}>{busy ? "正在创建…" : "创建模拟账户"}</button><button type="button" className="secondary" disabled={busy} onClick={() => setCreating(false)}>取消</button></form>}</section>{account && <AiSimulationWorkspace key={account.portfolio_id} account={account} strategies={strategies} onOpenDisciplines={onOpenDisciplines} />}</section>;
+  async function removeAccount() {
+    if (!account || busy) return;
+    const id = account.portfolio_id;
+    if (!window.confirm(`确认删除${marketLabels[account.market]}账户 · ${id.slice(0, 8)}？\n该账户将归档并停止定时复核，持仓与交易历史保留但不再展示，不会卖出持仓或影响其他账户。`)) return;
+    setBusy(true); setError(null);
+    try {
+      await deleteAiSimulationAccount(id);
+      const remaining = accounts.filter(item => item.portfolio_id !== id);
+      setAccounts(remaining); setSelected(remaining[0]?.portfolio_id ?? "");
+    } catch (e) { setError(errorText(e, "删除账户失败")); }
+    finally { setBusy(false); }
+  }
+  return <section><section className="panel"><div className="panel-head"><h2>我的模拟账户</h2><div className="ai-account-actions"><button className="secondary" disabled={loading || busy} onClick={() => void reload()}>刷新账户</button><button className="primary" disabled={busy} onClick={() => setCreating(true)}>新建账户</button><button className="secondary" disabled={!account || busy || loading} onClick={() => void removeAccount()}>删除账户</button></div></div><label>切换账户<select value={selected} disabled={busy || loading} onChange={e => setSelected(e.target.value)}><option value="" disabled>{loading ? "正在读取…" : "请选择账户"}</option>{accounts.map((a, index) => <option key={a.portfolio_id} value={a.portfolio_id}>{marketLabels[a.market]}账户 {index + 1} · {a.portfolio_id.slice(0, 8)}</option>)}</select></label><p>账户的本金、策略、持仓与运行历史独立保存。启用的账户均按所属市场交易时段定时复核；切换页面不会暂停其他账户。策略与个人纪律按账户独立选择，行情、资讯和定时复核机制共享。</p>{error && <div className="notice">{error}</div>}{creating && <form onSubmit={create}><div className="form-row"><label>市场<select value={market} onChange={e => setMarket(e.target.value as AiSimulationMarket)}>{(["a_share", "hong_kong", "united_states"] as const).map(m => <option key={m} value={m}>{marketLabels[m]}</option>)}</select></label><label>初始本金<input required type="number" min="1" step="0.01" value={capital} onChange={e => setCapital(e.target.value)} /></label></div><p>只创建账户，不立即买卖；创建后可在账户设置中选择策略、持仓上限。</p><button className="primary" disabled={busy}>{busy ? "正在创建…" : "创建模拟账户"}</button><button type="button" className="secondary" disabled={busy} onClick={() => setCreating(false)}>取消</button></form>}</section>{account && <AiSimulationWorkspace key={account.portfolio_id} account={account} strategies={strategies} onOpenDisciplines={onOpenDisciplines} />}</section>;
 }
 
 function AiSimulationWorkspace({ strategies, onOpenDisciplines, account }: { strategies: Strategy[]; onOpenDisciplines: () => void; account: AiSimulationAccount }) {
