@@ -32,6 +32,7 @@ from ai_trading_agent.interfaces.adapter.environment import load_runtime_environ
 from ai_trading_agent.interfaces.facade.ai_simulation import (
     ai_simulation_repository,
     create_simulation_account,
+    delete_simulation_account,
     AiSimulationRunRequest,
     ai_simulation_overview,
     ai_simulation_runs,
@@ -534,6 +535,15 @@ def create_app(
         return [{"portfolio_id": str(a.portfolio_id), "market": a.market,
                  "initial_capital": str(a.initial_capital), "currency": a.currency}
                 for a in await ai_simulation_repository(app).list_active()]
+
+    @app.delete("/api/v1/ai-simulation/accounts/{portfolio_id}", status_code=204, tags=["ai-simulation"])
+    async def delete_simulation_account_endpoint(portfolio_id: UUID):
+        try:
+            await delete_simulation_account(app, portfolio_id)
+        except LookupError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post("/api/v1/ai-simulation/accounts", status_code=201, tags=["ai-simulation"])
     async def create_simulation_account_endpoint(payload: AiSimulationRunInput):

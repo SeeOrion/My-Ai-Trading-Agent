@@ -109,6 +109,28 @@ async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> Ai
     return await _with_account_lock(app, request, _run_ai_simulation)
 
 
+def _account_lock(app, key):
+    locks = getattr(app.state, "simulation_account_locks", None)
+    if locks is None:
+        locks = app.state.simulation_account_locks = {}
+    return locks.setdefault(str(key), asyncio.Lock())
+
+
+async def delete_simulation_account(app: FastAPI, portfolio_id: UUID):
+    """Archive only this account; retain its ledger and stop future reviews."""
+    lock = _account_lock(app, portfolio_id)
+    if lock.locked():
+        raise ValueError("该账户正在复核或更新，请等待完成后再删除")
+    async with lock:
+        repository = ai_simulation_repository(app)
+        account = await repository.get(portfolio_id)
+        if account is None:
+            raise LookupError("模拟账户不存在")
+        if account.status != "active":
+            return
+        await repository.save_portfolio(replace(account, status="archived"))
+
+
 async def _with_account_lock(app, request, operation):
     account = await resolve_simulation_account(ai_simulation_repository(app), request.market,
                                                 request.portfolio_id)
@@ -119,13 +141,14 @@ async def _with_account_lock(app, request, operation):
         selected = account.discipline_ids if account is not None else ()
     await _validate_account_disciplines(app, request.market, selected)
     request = replace(request, discipline_ids=selected)
-    locks = getattr(app.state, "simulation_account_locks", None)
-    if locks is None:
-        locks = app.state.simulation_account_locks = {}
-    lock = locks.setdefault(str(request.portfolio_id or request.market), asyncio.Lock())
+    lock = _account_lock(app, request.portfolio_id or request.market)
     if lock.locked():
         raise ValueError("该账户正在复核或更新，请等待完成后再操作")
     async with lock:
+        if request.portfolio_id is not None:
+            await resolve_simulation_account(
+                ai_simulation_repository(app), request.market, request.portfolio_id
+            )
         return await operation(app, request)
 
 
