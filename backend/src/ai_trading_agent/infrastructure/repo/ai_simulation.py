@@ -72,6 +72,7 @@ class SqlAlchemyAiSimulationRepository:
             record.max_positions = portfolio.max_positions
             record.strategy_ids = [str(strategy_id) for strategy_id in portfolio.strategy_ids]
             record.discipline_ids = [str(item) for item in portfolio.discipline_ids]
+            record.account_type = portfolio.account_type
             # Retain the former nullable foreign key as a migration bridge for
             # existing private databases; the ordered JSON list is authoritative.
             record.strategy_id = (
@@ -212,6 +213,7 @@ def _portfolio(record: AiSimulationPortfolioRecord) -> AiSimulationPortfolio:
         max_positions=record.max_positions,
         strategy_ids=tuple(UUID(strategy_id) for strategy_id in stored_strategy_ids),
         discipline_ids=tuple(UUID(item) for item in record.discipline_ids),
+        account_type=record.account_type,
         status=record.status,
     )
 

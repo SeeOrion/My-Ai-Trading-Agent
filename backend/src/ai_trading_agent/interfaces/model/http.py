@@ -704,6 +704,7 @@ class PaperPortfolioOverviewResponse(BaseModel):
 
 
 class AiSimulationRunInput(BaseModel):
+    account_type: str = Field(default="equity", pattern="^(equity|etf)$")
     discipline_ids: list[UUID] | None = Field(default=None, max_length=100)
     portfolio_id: UUID | None = None
     market: Market
@@ -809,6 +810,7 @@ class AiSimulationRunResponse(BaseModel):
 
 
 class AiSimulationOverviewResponse(BaseModel):
+    account_type: str
     discipline_ids: list[UUID]
     portfolio_id: UUID
     market: Market
@@ -846,6 +848,7 @@ class AiSimulationOverviewResponse(BaseModel):
             max_positions=portfolio.max_positions,
             strategy_ids=list(portfolio.strategy_ids),
             discipline_ids=list(portfolio.discipline_ids),
+            account_type=portfolio.account_type,
             observed_at=overview.observed_at.isoformat(),
             positions=[
                 AiSimulationPositionResponse(

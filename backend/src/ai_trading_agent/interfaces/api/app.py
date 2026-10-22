@@ -533,6 +533,7 @@ def create_app(
     @app.get("/api/v1/ai-simulation/accounts", tags=["ai-simulation"])
     async def list_simulation_accounts():
         return [{"portfolio_id": str(a.portfolio_id), "market": a.market,
+                 "account_type": a.account_type,
                  "initial_capital": str(a.initial_capital), "currency": a.currency}
                 for a in await ai_simulation_repository(app).list_active()]
 
@@ -551,9 +552,11 @@ def create_app(
             if payload.portfolio_id is not None:
                 raise ValueError("新建账户不能指定已有账户 ID")
             account = await create_simulation_account(app, AiSimulationRunRequest(
+                account_type=payload.account_type,
                 market=payload.market, initial_capital=payload.initial_capital,
                 max_positions=payload.max_positions, discipline_ids=None if payload.discipline_ids is None else tuple(payload.discipline_ids), strategy_ids=tuple(payload.strategy_ids)))
             return {"portfolio_id": str(account.portfolio_id), "market": account.market,
+                    "account_type": account.account_type,
                     "initial_capital": str(account.initial_capital), "currency": account.currency}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error

@@ -89,6 +89,12 @@ class QuoteUniverseCandidateProvider:
         return [_observation_from_quote(quote) for quote in quotes]
 
 
+def rank_quotes(quotes: list[Quote], ranking: CandidateRanking, limit: int = 10) -> CandidateScreen:
+    """Rank an explicitly selected universe without substituting stock candidates."""
+    observations = [_observation_from_quote(quote) for quote in quotes]
+    return CandidateScreen(tuple(_rank(observations, ranking)[:limit]), len(observations))
+
+
 def research_universe(market: Market) -> tuple[Instrument, ...]:
     symbols = _RESEARCH_UNIVERSES.get(market, ())
     if not symbols:

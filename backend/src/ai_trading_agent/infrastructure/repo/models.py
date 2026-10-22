@@ -139,6 +139,7 @@ class AiSimulationPortfolioRecord(Base, TimestampedRecord):
     )
     strategy_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     discipline_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    account_type: Mapped[str] = mapped_column(String(16), nullable=False, default="equity")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
 
 

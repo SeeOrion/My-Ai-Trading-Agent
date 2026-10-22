@@ -64,6 +64,7 @@ from ai_trading_agent.interfaces.facade.research_workspace import (
     today_candidates,
 )
 from ai_trading_agent.interfaces.model.http import ResearchRequest
+from ai_trading_agent.interfaces.facade.etf_simulation import etf_candidates
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +76,7 @@ class AiSimulationRunRequest:
     trigger: str = "manual"
     portfolio_id: UUID | None = None
     discipline_ids: tuple[UUID, ...] | None = None
+    account_type: str = "equity"
 
 
 def ai_simulation_repository(app: FastAPI) -> SqlAlchemyAiSimulationRepository:
@@ -101,7 +103,7 @@ async def create_simulation_account(app: FastAPI, request: AiSimulationRunReques
         raise ValueError("AI 模拟账户仅支持股票市场")
     account = AiSimulationPortfolio(uuid4(), request.market.value,
         _currency_for_market(request.market), request.initial_capital, request.initial_capital,
-        request.max_positions, request.strategy_ids, discipline_ids=request.discipline_ids or ())
+        request.max_positions, request.strategy_ids, discipline_ids=request.discipline_ids or (), account_type=request.account_type)
     return await ai_simulation_repository(app).save_portfolio(account)
 
 
@@ -178,6 +180,7 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
             max_positions=request.max_positions,
             strategy_ids=tuple(item.strategy_id for item in strategies),
             discipline_ids=request.discipline_ids or (),
+            account_type=request.account_type,
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions: list[AiSimulationPosition] = []
@@ -190,9 +193,13 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
     portfolio, positions, discipline_notices = await _apply_position_exits(
         app, repository, portfolio, positions, strategies
     )
-    screen, _ = await today_candidates(
-        request.market, CandidateRanking.BALANCED_ENTRY, refresh=True, limit=10
-    )
+    etf_notices = []
+    if portfolio.account_type == "etf":
+        screen, etf_notices = await etf_candidates(app)
+    else:
+        screen, _ = await today_candidates(
+            request.market, CandidateRanking.BALANCED_ENTRY, refresh=True, limit=10
+        )
     existing_symbols = held_at_start | {item.instrument.symbol for item in positions}
     notices: list[str] = [
         "AI 模拟组合仅在预设高流动性研究样本中筛选，不是全市场扫描，也不会发送真实订单。",
@@ -201,6 +208,7 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
             "实际市场成交、税费与券商规则可能不同。"
         ),
         *discipline_notices,
+        *etf_notices,
     ]
     if not strategies:
         notices.append("未选择匹配的启用策略：使用内置因子与 25% 单标的风险预算。")
@@ -218,6 +226,8 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
     decision_reports: list[AiSimulationDecisionReport] = []
 
     for candidate in screen.candidates:
+        if candidate.observation.instrument.instrument_type.value != portfolio.account_type:
+            continue
         if candidate.observation.instrument.symbol in existing_symbols:
             decision_reports.append(
                 AiSimulationDecisionReport(
@@ -299,6 +309,7 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
             max_positions=portfolio.max_positions,
             strategy_ids=portfolio.strategy_ids,
             discipline_ids=portfolio.discipline_ids,
+            account_type=portfolio.account_type,
         )
         portfolio = await repository.save_portfolio(portfolio)
         positions.append(position)
@@ -681,7 +692,7 @@ async def best_entry_candidates(app: FastAPI, market: Market) -> dict[str, objec
     if market is Market.FUND:
         raise ValueError("今日股票候选仅支持 A 股、港股与美股。")
     repository = ai_simulation_repository(app)
-    accounts = [item for item in await repository.list_active() if item.market == market.value]
+    accounts = [item for item in await repository.list_active() if item.market == market.value and item.account_type == "equity"]
     portfolio = accounts[0] if len(accounts) == 1 else None
     account_exists = portfolio is not None
     if portfolio is None:
@@ -785,10 +796,10 @@ async def _apply_position_exits(
         position = replace(position, exit_plan=plan)
         if evidence_notice:
             notices.append(evidence_notice)
-        # A-share cash equities cannot sell shares bought on the same local date.
+        # ETF settlement defaults conservatively to T+1 until product-specific T+0 is verified.
         if (
             position.instrument.market is Market.A_SHARE
-            and position.instrument.instrument_type.value == "equity"
+            and position.instrument.instrument_type.value in {"equity", "etf"}
             and position.opened_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
             >= quote.observed_at.astimezone(ZoneInfo("Asia/Shanghai")).date()
         ):
@@ -797,7 +808,7 @@ async def _apply_position_exits(
                 exit_plan=replace(
                     plan,
                     action="settlement_hold",
-                    basis=(*plan.basis, "A 股股票 T+1：当日买入仅更新计划。"),
+                    basis=(*plan.basis, "模拟 T+1 保护：当日买入仅更新计划；ETF 暂不启用 T+0。"),
                 ),
             )
             active_positions.append(await repository.save_position(position))
@@ -1082,6 +1093,7 @@ async def _execute_position_sale(
         max_positions=portfolio.max_positions,
         strategy_ids=portfolio.strategy_ids,
         discipline_ids=portfolio.discipline_ids,
+        account_type=portfolio.account_type,
         status=portfolio.status,
     )
     updated_portfolio = await repository.save_portfolio(updated_portfolio)

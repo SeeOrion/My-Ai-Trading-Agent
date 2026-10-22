@@ -24,8 +24,13 @@ class AiSimulationPortfolio:
     strategy_ids: tuple[UUID, ...] = ()
     status: str = "active"
     discipline_ids: tuple[UUID, ...] = ()
+    account_type: str = "equity"
 
     def __post_init__(self) -> None:
+        if self.account_type not in {"equity", "etf"}:
+            raise ValueError("invalid simulation account type")
+        if self.account_type == "etf" and self.market != "a_share":
+            raise ValueError("模拟 ETF 账户当前仅支持境内场内 ETF")
         if len(set(self.discipline_ids)) != len(self.discipline_ids):
             raise ValueError("duplicate account disciplines")
         if self.initial_capital <= 0 or self.cash_balance < 0:
