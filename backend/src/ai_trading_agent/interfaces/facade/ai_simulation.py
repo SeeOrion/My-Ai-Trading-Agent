@@ -392,6 +392,7 @@ async def _update_ai_simulation_settings(
         notices=tuple(
             dict.fromkeys((*overview.notices, "AI 模拟账户设置已同步；既有持仓和交易记录已保留。"))
         ),
+        decision_reports=overview.decision_reports,
     )
 
 
@@ -529,6 +530,9 @@ async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bo
     invested_cost = sum((item.cost_amount for item in positions), Decimal("0"))
     market_value = Decimal("0") if summary is None else summary.total_market_value
     total_equity = portfolio.cash_balance + market_value
+    # Valuation refreshes must not erase the last persisted simulation decision.
+    # An empty/failed newer run intentionally replaces older entry blockers.
+    latest_runs = await repository.list_runs(market, 1, portfolio.portfolio_id)
     return AiSimulationOverview(
         portfolio=portfolio,
         observed_at=paper_overview.summary.observed_at,
@@ -540,6 +544,7 @@ async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bo
         daily_pnl=None if summary is None else summary.daily_pnl,
         month_to_date_pnl=None if summary is None else summary.month_to_date_pnl,
         notices=paper_overview.notices,
+        decision_reports=latest_runs[0].decision_reports if latest_runs else (),
     )
 
 
