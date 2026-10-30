@@ -509,6 +509,7 @@ class WatchlistAnalysisResponse(BaseModel):
     status: WatchlistAnalysisStatus
     tags: list[WatchlistAnalysisTagResponse]
     ai_summary: str | None
+    summary_generated_at: str | None = None
     notices: list[str]
 
     @classmethod
@@ -530,6 +531,7 @@ class WatchlistAnalysisResponse(BaseModel):
                 for tag in analysis.tags
             ],
             ai_summary=analysis.ai_summary,
+            summary_generated_at=analysis.summary_generated_at.isoformat() if analysis.summary_generated_at else None,
             notices=list(analysis.notices),
         )
 

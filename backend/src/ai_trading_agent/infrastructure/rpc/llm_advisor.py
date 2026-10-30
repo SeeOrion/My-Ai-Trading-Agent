@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.rpc.llm_usage import record_usage
 
 
 class LLMResearchAdvisorError(RuntimeError):
@@ -28,15 +31,24 @@ class OpenAICompatibleResearchAdvisor:
             ],
         }
         headers = {"Authorization": f"Bearer {self._settings.api_key}"}
+        body = {}
         try:
             async with httpx.AsyncClient(timeout=self._settings.timeout_seconds) as client:
                 response = await client.post(
                     f"{self._settings.base_url}/chat/completions", json=payload, headers=headers
                 )
                 response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
+                body = response.json()
+                content = body["choices"][0]["message"]["content"]
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("model returned an empty answer")
+        except asyncio.CancelledError:
+            await record_usage(model=self._settings.model, status="failed", body=body, reason="请求取消或超时，用量可能未知")
+            raise
         except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:
+            await record_usage(model=self._settings.model, status="failed", body=body)
             raise LLMResearchAdvisorError(f"model request failed: {error}") from error
+        await record_usage(model=self._settings.model, status="success", body=body)
         answer = str(content).strip()
         if not answer:
             raise LLMResearchAdvisorError("model returned an empty answer")

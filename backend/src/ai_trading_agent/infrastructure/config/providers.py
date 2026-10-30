@@ -191,7 +191,7 @@ class WatchlistAnalysisSettings:
     """Bounded cadence for selected-instrument research refreshes only."""
 
     scheduler_enabled: bool = True
-    interval_seconds: int = 900
+    interval_seconds: int = 3600
     max_items_per_run: int = 30
 
     @classmethod
@@ -206,8 +206,8 @@ class WatchlistAnalysisSettings:
         return cls(
             scheduler_enabled=raw_enabled == "true",
             interval_seconds=_bounded_int(
-                os.environ.get("WATCHLIST_ANALYSIS_INTERVAL_SECONDS", "900").strip(),
-                "WATCHLIST_ANALYSIS_INTERVAL_SECONDS",
+                os.environ.get("WATCHLIST_RESEARCH_INTERVAL_SECONDS", "3600").strip(),
+                "WATCHLIST_RESEARCH_INTERVAL_SECONDS",
                 minimum=300,
                 maximum=86_400,
             ),

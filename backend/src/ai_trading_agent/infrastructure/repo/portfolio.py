@@ -181,6 +181,8 @@ class SqlAlchemyWatchlistAnalysisRepository:
                 status=analysis.status.value,
                 tags=[tag.definition() for tag in analysis.tags],
                 ai_summary=analysis.ai_summary,
+                summary_state=analysis.summary_state,
+                summary_generated_at=analysis.summary_generated_at,
                 notices=list(analysis.notices),
             )
             session.add(record)
@@ -227,5 +229,7 @@ def _analysis(record: WatchlistAnalysisSnapshotRecord) -> WatchlistAnalysisSnaps
             for item in record.tags
         ),
         ai_summary=record.ai_summary,
+        summary_state=record.summary_state,
+        summary_generated_at=record.summary_generated_at,
         notices=tuple(str(item) for item in record.notices),
     )

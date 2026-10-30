@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from contextlib import asynccontextmanager
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from ai_trading_agent.infrastructure.repo.llm_usage import SqlAlchemyLLMUsageRepository
+from ai_trading_agent.infrastructure.rpc.llm_usage import usage_sink, usage_feature
+from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 
 from ai_trading_agent.application.disciplines import (
     ListDisciplinesHandler,
@@ -194,6 +198,28 @@ def create_app(
         )
     list_factors = ListFactorsHandler()
     get_factor = GetFactorHandler()
+
+    @app.middleware("http")
+    async def llm_usage_context(request, call_next):
+        async def persist(event):
+            await SqlAlchemyLLMUsageRepository(private_session_factory(app)).record(event)
+        sink_token = usage_sink.set(persist)
+        feature_token = usage_feature.set("market_question" if "assistant" in request.url.path else "research")
+        try:
+            return await call_next(request)
+        finally:
+            usage_sink.reset(sink_token)
+            usage_feature.reset(feature_token)
+
+    @app.get("/api/v1/llm/usage", tags=["system"])
+    async def llm_usage(period: str = "month") -> dict:
+        if period not in {"day", "month"}:
+            raise HTTPException(422, "period must be day or month")
+        now = datetime.now(UTC)
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if period == "month":
+            since = since.replace(day=1)
+        return await SqlAlchemyLLMUsageRepository(private_session_factory(app)).summary(since)
 
     @app.get("/healthz", tags=["system"])
     def healthcheck() -> dict[str, str]:
@@ -440,7 +466,7 @@ def create_app(
             item = await get_watchlist_item(app, item_id)
             if item is None:
                 raise HTTPException(status_code=404, detail="watchlist item not found")
-            analysis = await refresh_watchlist_analysis(app, item, force=True)
+            analysis = await refresh_watchlist_analysis(app, item, force=True, force_summary=True)
             return WatchlistAnalysisResponse.from_domain(analysis)
         except HTTPException:
             raise

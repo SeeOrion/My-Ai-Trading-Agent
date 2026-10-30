@@ -8,6 +8,7 @@ import httpx
 
 from ai_trading_agent.domain.aggregate.news import LLMNewsAssessment, NewsArticle
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
+from ai_trading_agent.infrastructure.rpc.llm_usage import record_usage
 
 
 class LLMNewsAnalysisError(RuntimeError):
@@ -53,11 +54,12 @@ class OpenAICompatibleNewsAnalyzer:
                 )
                 response.raise_for_status()
         except httpx.HTTPError as error:
+            await record_usage(model=self._settings.model, status="failed")
             raise LLMNewsAnalysisError(f"model request failed: {error}") from error
         try:
             content = response.json()["choices"][0]["message"]["content"]
             parsed = json.loads(_strip_code_fence(str(content)))
-            return LLMNewsAssessment(
+            result = LLMNewsAssessment(
                 summary=str(parsed["summary"]),
                 sentiment=str(parsed["sentiment"]).lower(),
                 confidence=float(parsed["confidence"]),
@@ -66,9 +68,12 @@ class OpenAICompatibleNewsAnalyzer:
                 model=self._settings.model,
             )
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as error:
+            await record_usage(model=self._settings.model, status="failed")
             raise LLMNewsAnalysisError(
                 "model response did not match the required JSON contract"
             ) from error
+        await record_usage(model=self._settings.model, status="success", body=response.json())
+        return result
 
 
 _SYSTEM_PROMPT = """You are a financial-news analyst. Use only the supplied article text.

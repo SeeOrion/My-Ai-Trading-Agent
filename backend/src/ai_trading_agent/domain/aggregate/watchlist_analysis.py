@@ -42,6 +42,8 @@ class WatchlistAnalysisSnapshot:
     tags: tuple[AnalysisTag, ...]
     ai_summary: str | None
     notices: tuple[str, ...] = ()
+    summary_state: dict | None = None
+    summary_generated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.observed_at.tzinfo is None:

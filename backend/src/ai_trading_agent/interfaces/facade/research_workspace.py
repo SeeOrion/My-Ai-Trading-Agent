@@ -396,6 +396,7 @@ async def research(query: ResearchRequest) -> ResearchResponse:
                     "label": sentiment.label,
                     "score": sentiment.score,
                     "articles": len(news),
+                    "titles": [item.title for item in news],
                     "positive_terms": list(sentiment.positive_terms),
                     "negative_terms": list(sentiment.negative_terms),
                 }

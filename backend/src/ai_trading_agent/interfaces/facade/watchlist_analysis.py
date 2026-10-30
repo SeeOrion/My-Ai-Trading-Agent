@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
+import asyncio
 
 from fastapi import FastAPI
 
@@ -22,6 +23,10 @@ from ai_trading_agent.domain.aggregate.watchlist_analysis import (
 )
 from ai_trading_agent.domain.enums.research import ManualActionStatus, WatchlistAnalysisStatus
 from ai_trading_agent.domain.service.manual_actions import assess_manual_action
+from ai_trading_agent.domain.service.summary_reuse import summary_change_reason, important_news_titles
+from ai_trading_agent.infrastructure.repo.llm_usage import SqlAlchemyLLMUsageRepository
+from ai_trading_agent.infrastructure.rpc.llm_usage import usage_sink, usage_feature, record_usage
+from ai_trading_agent.interfaces.facade.persistence import private_session_factory
 from ai_trading_agent.infrastructure.config.news import OpenAICompatibleLLMSettings
 from ai_trading_agent.infrastructure.config.providers import WatchlistAnalysisSettings
 from ai_trading_agent.infrastructure.rpc.llm_advisor import OpenAICompatibleResearchAdvisor
@@ -63,6 +68,26 @@ async def refresh_watchlist_analysis(
     item: WatchlistItem,
     *,
     force: bool = False,
+    force_summary: bool = False,
+) -> WatchlistAnalysisSnapshot:
+    """Serialize refreshes for each instrument in this single-worker deployment."""
+    if not hasattr(app.state, "summary_locks"):
+        app.state.summary_locks = {}
+    lock = app.state.summary_locks.setdefault(str(item.item_id), asyncio.Lock())
+    async def persist(event):
+        await SqlAlchemyLLMUsageRepository(private_session_factory(app)).record(event)
+    async with lock:
+        sink_token = usage_sink.set(persist)
+        feature_token = usage_feature.set("watchlist_manual" if force_summary else "watchlist_auto")
+        try:
+            return await _refresh_watchlist_analysis(app, item, force=force, force_summary=force_summary)
+        finally:
+            usage_sink.reset(sink_token)
+            usage_feature.reset(feature_token)
+
+
+async def _refresh_watchlist_analysis(
+    app: FastAPI, item: WatchlistItem, *, force: bool = False, force_summary: bool = False,
 ) -> WatchlistAnalysisSnapshot:
     """Collect one selected instrument sequentially and persist a bounded result."""
     settings = WatchlistAnalysisSettings.from_environment()
@@ -186,9 +211,42 @@ async def refresh_watchlist_analysis(
         f"rationale={list(action.rationale)}"
     )
 
-    ai_summary = await _summarize_with_ai(context, notices)
+    state = {
+        "version": 1,
+        "action": [action.status.value, str(action.price_level), str(action.max_position_pct)],
+        "disciplines": {str(d.discipline.discipline_id): {
+            "status": d.status.value, "definition": d.discipline.definition()
+        } for d in decisions},
+        "strategies": sorted([
+            [p.name, sorted(p.factor_ids), str(p.max_position_pct), p.thesis, p.risk_notes]
+            for p in strategies
+        ]),
+        "signals": {tag.category: tag.label for tag in tags
+                    if tag.category in {"trend", "momentum", "volume", "sentiment", "capital_flow", "fundamentals"}},
+        "factors": {str(f["identifier"]): {"direction": f.get("direction"),
+                    "value": None if f.get("value") is None else str(f["value"])}
+                    for f in (report.factor_analysis or {}).get("observations", [])},
+        "news": important_news_titles(
+            list((report.news_sentiment or {}).get("titles", []))
+            + [str(n.get("title", "")) for n in (report.fund_research or {}).get("news", [])]
+        ),
+    }
+    state["signals"]["quote_available"] = quote is not None
+    reason = summary_change_reason(existing.summary_state if existing else None, state)
+    reuse = bool(existing and existing.ai_summary and not force_summary and reason is None)
+    generated_at = existing.summary_generated_at if reuse else now
+    if reuse:
+        ai_summary = existing.ai_summary
+        state = existing.summary_state
+        await record_usage(model="", status="reused", reason="关键数据无明显变化")
+    else:
+        ai_summary = await _summarize_with_ai(context, notices)
+        if ai_summary is None:
+            state, generated_at = None, None
     if ai_summary is not None:
-        tags.append(AnalysisTag("ai", "AI 解读已更新", "info"))
+        label = (f"摘要复用 · {generated_at:%m-%d %H:%M} UTC" if reuse and generated_at
+                 else "AI 解读已更新")
+        tags.append(AnalysisTag("ai", label, "info"))
     elif context:
         notices.append("AI 解读暂不可用；已保留可解释的数据标签。")
 
@@ -201,6 +259,8 @@ async def refresh_watchlist_analysis(
         status=status,
         tags=tuple(_unique_tags(tags)),
         ai_summary=ai_summary,
+        summary_state=state,
+        summary_generated_at=generated_at,
         notices=tuple(notices[:32]),
     )
     return await SaveWatchlistAnalysisHandler(repository).handle(snapshot)
@@ -366,7 +426,8 @@ async def _summarize_with_ai(context: list[str], notices: list[str]) -> str | No
                 "中文研究摘要。第 1 行必须以“行动：”开头，只能复述已提供的"
                 "手动复核状态和价位；第 2 行以“依据：”开头，说明策略所选因子、"
                 "纪律和数据缺口。不得使用 Markdown 标记（包括 #、*、_ 或反引号），"
-                "不得生成订单或承诺结果。"
+                "不得生成订单或承诺结果。不复述现价、时间或动态数值；摘要可能被复用，"
+                "当前精确数据请引导用户查看页面行情与因子标签。"
             ),
             context="\n\n".join(context),
         )

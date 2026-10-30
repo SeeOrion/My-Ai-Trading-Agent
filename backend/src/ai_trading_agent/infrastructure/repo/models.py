@@ -108,7 +108,25 @@ class WatchlistAnalysisSnapshotRecord(Base, TimestampedRecord):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     tags: Mapped[list[dict[str, str]]] = mapped_column(JSON, nullable=False, default=list)
     ai_summary: Mapped[str | None] = mapped_column(Text)
+    summary_state: Mapped[dict | None] = mapped_column(JSON)
+    summary_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notices: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+
+
+class LLMUsageRecord(Base):
+    __tablename__ = "llm_usage"
+    __table_args__ = (Index("ix_llm_usage_created_at", "created_at"), {"schema": SCHEMA})
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    feature: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(160), nullable=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer)
+    output_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    cached_tokens: Mapped[int | None] = mapped_column(Integer)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer)
 
 
 class PaperPositionRecord(Base, TimestampedRecord):
