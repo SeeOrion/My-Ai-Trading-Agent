@@ -371,10 +371,20 @@ A 股：腾讯公开行情（有界重试） → Hithink Finance → Futu OpenD
 
 | 任务 | 默认 | 配置 | 行为 |
 | --- | --- | --- | --- |
-| 自选分析刷新 | 每 900 秒 | `WATCHLIST_ANALYSIS_*` | 顺序刷新最多 30 个自选，存标签和 AI 摘要；不会全市场扫描 |
+| 自选分析刷新 | 每 3600 秒 | `WATCHLIST_RESEARCH_INTERVAL_SECONDS`、`WATCHLIST_ANALYSIS_SCHEDULER_ENABLED` | 顺序刷新最多 30 个自选；摘要仅在关键语义变化时重新生成，尾盘自动刷新同样复用 |
 | AI 模拟交易 | 每 600 秒；仅各交易所实际交易日与常规开市时段 | `AI_SIMULATION_*` | 使用 XSHG/XHKG/XNYS 独立日历，跳过节假日和午休；任务每轮重新对齐到 00/10/20/… 分钟，并保存结果/失败记录 |
 | 全市场扫描 | 默认关闭 | `MARKET_SCAN_*` | 仅手动或显式开启；批次上限 400 |
 | 扫描快照清理 | 与扫描流程关联 | 代码中的保留策略 | `market_snapshots` 只保留 7 天 |
+
+摘要优化（2026-10-29）：`domain/service/summary_reuse.py` 定义语义触发规则；
+`interfaces/facade/watchlist_analysis.py` 白名单构建比较状态并串行刷新，
+`watchlist_analysis_snapshots.summary_state/summary_generated_at` 保存上次成功生成基准。
+忽略时间戳和来源噪音；重要新闻由标题关键词筛选；因子数值阈值为相对 10% 且绝对 0.01。
+`infrastructure/rpc/llm_usage.py` 通过请求上下文记录计数（不记录原文/密钥），
+`infrastructure/repo/llm_usage.py` 持久化并 SQL 分组聚合；
+`GET /api/v1/llm/usage?period=day|month`（UTC）供 `frontend/src/LLMUsagePanel.tsx` 设置页使用。
+迁移 `20261029_01` 必须先于新版后端启动。旧 `WATCHLIST_ANALYSIS_INTERVAL_SECONDS` 停用。
+模拟交易调度器独立，仍遵守交易所日历和开市时段每 600 秒执行；不调用摘要来决定是否运行。
 
 本机 macOS 开发环境使用 `backend/deploy/macos/com.seeorion.my-ai-trading-agent.backend.plist` 与 `frontend/deploy/macos/com.seeorion.my-ai-trading-agent.frontend.plist` 安装两项 `launchd` 用户服务，使 FastAPI 与生产构建后的前端在登录后持续运行并在异常退出后自动重启。服务是否常驻与模拟任务是否执行是两回事：后者仍由 `AI_SIMULATION_*` 和交易时段门控严格限制。
 
