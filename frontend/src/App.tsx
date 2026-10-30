@@ -1,5 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import { BestEntryPanel } from "./BestEntryPanel";
+import { LLMUsagePanel } from "./LLMUsagePanel";
 import {
   createDiscipline, createStrategy, Discipline, DisciplineInput, fetchDisciplines,
   fetchFactors, fetchNews, fetchQuote, fetchResearch, fetchStrategies, Factor, Market, NewsItem,
@@ -183,7 +184,8 @@ function App() {
       {page === "funds" && <FundWorkspace />}
       {page === "strategies" && <StrategyWorkspace factors={factors} strategies={strategies} error={strategyError} reload={reloadStrategies} />}
       {page === "disciplines" && <DisciplineWorkspace disciplines={disciplines} error={disciplineError} reload={reloadDisciplines} />}
-      {["documents", "journal", "settings"].includes(page) && <FutureWorkspace page={active.label} />}
+      {page === "settings" && <LLMUsagePanel />}
+      {["documents", "journal"].includes(page) && <FutureWorkspace page={active.label} />}
     </section>
   </main>;
 }

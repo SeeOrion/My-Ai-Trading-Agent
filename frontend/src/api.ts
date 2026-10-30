@@ -1,4 +1,11 @@
 export type Market = "a_share" | "hong_kong" | "united_states" | "fund";
+export interface LLMUsageGroup {
+  feature: string; model: string; status: string; events: number; unknown_usage: number;
+  input_tokens: number | null; output_tokens: number | null; total_tokens: number | null;
+  cached_tokens: number | null; reasoning_tokens: number | null;
+}
+export interface LLMUsage { since: string; groups: LLMUsageGroup[] }
+export const fetchLLMUsage = (period: "day" | "month") => request<LLMUsage>(`/api/v1/llm/usage?period=${period}`);
 export type InstrumentType = "equity" | "etf" | "fund" | "option";
 
 export interface Factor {
