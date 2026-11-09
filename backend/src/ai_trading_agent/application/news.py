@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -68,36 +70,50 @@ class ResilientLatestNewsHandler:
         self._stale_if_error = stale_if_error
         self._clock = clock or (lambda: datetime.now(UTC))
         self._cache: dict[tuple[tuple[str, ...], timedelta], _CachedNews] = {}
+        self._lock = asyncio.Lock()
 
     async def handle(
         self, *, sources: Iterable[str], lookback: timedelta
     ) -> list[NewsArticle]:
+        async with self._lock:
+            return await self._handle(sources=sources, lookback=lookback)
+
+    async def _handle(self, *, sources: Iterable[str], lookback: timedelta) -> list[NewsArticle]:
         if lookback <= timedelta(0):
             raise ValueError("lookback must be positive")
         normalized_sources = _normalize_sources(sources)
         key = (normalized_sources, lookback)
         now = self._now()
         cached = self._cache.get(key)
-        if cached is not None and now - cached.collected_at <= self._cache_ttl:
-            return list(cached.articles)
+        def recent(articles):
+            current = self._now()
+            return [article for article in articles
+                    if current - lookback <= article.published_at <= current + timedelta(minutes=5)]
+        cached_articles = recent(cached.articles) if cached else []
+        if cached is not None and cached_articles and now - cached.collected_at <= self._cache_ttl:
+            return cached_articles
 
         errors: list[str] = []
         for source in normalized_sources:
             try:
-                articles = deduplicate_articles(
+                articles = recent(deduplicate_articles(
                     await self._provider.fetch_latest(sources=(source,), lookback=lookback)
-                )
+                ))
             except Exception as error:
                 errors.append(f"{source}: {error}")
                 continue
             if not articles:
                 errors.append(f"{source}: no recent articles")
                 continue
-            self._cache[key] = _CachedNews(tuple(articles), now)
+            if len(self._cache) >= 32 and key not in self._cache:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[key] = _CachedNews(tuple(articles), self._now())
             return articles
 
-        if cached is not None and now - cached.collected_at <= self._stale_if_error:
-            return list(cached.articles)
+        if cached is not None and self._now() - cached.collected_at <= self._stale_if_error:
+            remaining = recent(cached.articles)
+            if remaining:
+                return remaining
         detail = "; ".join(errors) or "no public news source configured"
         raise NewsCollectionUnavailableError(detail)
 

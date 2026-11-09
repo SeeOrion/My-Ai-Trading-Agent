@@ -66,7 +66,7 @@ async def test_resilient_news_uses_sina_when_eastmoney_fails() -> None:
     provider = OrderedNewsProvider(
         {"eastmoney": RuntimeError("upstream down"), "sina": [_article("sina")]}
     )
-    handler = ResilientLatestNewsHandler(provider)
+    handler = ResilientLatestNewsHandler(provider, clock=lambda: datetime(2026, 9, 2, tzinfo=UTC))
 
     articles = await handler.handle(
         sources=("eastmoney", "sina"), lookback=timedelta(hours=24)
