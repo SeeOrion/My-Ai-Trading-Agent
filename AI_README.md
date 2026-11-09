@@ -367,6 +367,14 @@ A 股：腾讯公开行情（有界重试） → Hithink Finance → Futu OpenD
 
 ## 10. 定时任务与数据保留
 
+新闻归因入口（2026-11-09）：`interfaces/facade/news_research.py` 负责缓存名称/行业与采集组合，
+`infrastructure/rpc/tushare_news_subject.py` 只调用 `stock_basic` 元信息（不是 Tushare 新闻），
+`domain/service/news_relevance.py` 纯函数输出 instrument/industry/market 三层分数及匹配证据。
+`research_workspace.research` 展示分层结果；`assess_entry_candidate` 将个股分数送入因子，
+`_automatic_exit_evidence` 保留已归因且符合策略选择的新闻退出证据；不足两条近期去重标题时标记缺失。
+行业和大盘仅作研究背景，不能代替个股分数。候选 `research_notes` 随 `decision_reports` JSON 持久化，
+不需数据库迁移；旧记录默认空。自选摘要语义缓存版本 2 增加三层情绪状态，不新增定时 LLM 调用。
+
 应用在 `interfaces/api/app.py` 的 lifespan 中创建任务，通用循环实现位于 `interfaces/task/market_scans.py`。
 
 | 任务 | 默认 | 配置 | 行为 |
