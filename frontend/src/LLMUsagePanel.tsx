@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchLLMUsage, LLMUsage } from "./api";
 
-const features: Record<string, string> = { watchlist_auto: "自动摘要", watchlist_manual: "手动摘要", market_question: "市场问答", research: "其他研究" };
+const features: Record<string, string> = { news_analysis: "新闻研判", watchlist_auto: "自动摘要", watchlist_manual: "手动摘要", market_question: "市场问答", research: "其他研究" };
 const statuses: Record<string, string> = { success: "成功", failed: "失败", reused: "复用摘要" };
 const number = (value: number | null) => value === null ? "未报告" : value.toLocaleString("zh-CN");
 

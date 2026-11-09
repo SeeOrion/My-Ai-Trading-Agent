@@ -305,7 +305,7 @@ function OverviewNews() {
   }
 
   useEffect(() => { void load(); }, []);
-  return <section className="panel overview-news"><div className="panel-head"><div><p className="eyebrow">财经资讯</p><h2>财经资讯</h2><p>东方财富优先，失败时自动尝试新浪；成功结果短时缓存，并用于自选标的的情绪研究。</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>{loading ? "采集中…" : "刷新资讯"}</button></div>{error && <div className="notice">{error}</div>}<div className="news-list">{news.slice(0, 6).map((item) => <article className="news-item" key={`${item.publisher}-${item.published_at}-${item.title}`}><span className={`tag ${item.sentiment}`}>{displayText(item.sentiment)}</span><h3>{item.title}</h3><p>{item.content}</p><small>{item.publisher} · {new Date(item.published_at).toLocaleString()} · 情绪 {item.sentiment_score}</small></article>)}</div>{!loading && !error && news.length === 0 && <p className="muted">暂未获得可展示的公开财经资讯。</p>}</section>;
+  return <section className="panel overview-news"><div className="panel-head"><div><p className="eyebrow">财经资讯</p><h2>财经资讯</h2><p>合并东方财富与新浪公开快讯；个股研究额外检索名称、代码和行业相关新闻，去重后缓存。</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>{loading ? "采集中…" : "刷新资讯"}</button></div>{error && <div className="notice">{error}</div>}<div className="news-list">{news.slice(0, 6).map((item) => <article className="news-item" key={`${item.publisher}-${item.published_at}-${item.title}`}><span className={`tag ${item.sentiment}`}>{displayText(item.sentiment)}</span><h3>{item.title}</h3><p>{item.content}</p><small>{item.publisher} · {new Date(item.published_at).toLocaleString()} · 情绪 {item.sentiment_score}</small></article>)}</div>{!loading && !error && news.length === 0 && <p className="muted">暂未获得可展示的公开财经资讯。</p>}</section>;
 }
 
 const defaultWatchlist: WatchlistInput = { symbol: "600519.SH", market: "a_share", instrument_type: "equity", label: "", notes: "" };
@@ -477,6 +477,7 @@ function SentimentResearchCard({ data }: { data: Record<string, unknown> | null 
   if (!data) return <ResearchEmptyCard title="新闻情绪" />;
   if (data.scope === "instrument") return <ResearchInsightCard title="分层新闻情绪" caption="近24小时已采集样本 · 关键词归因，不是全网舆情" wide>
     <p>{String(data.summary ?? "")}</p>
+    <NewsModelBrief data={asRecord(data.llm_analysis)} />
     <div className="research-insight-grid">{[["instrument", "个股情绪"], ["industry", "行业情绪"], ["market", "大盘情绪"]].map(([key, title]) => {
       const layer = (data[key] ?? {}) as Record<string, unknown>;
       return <section key={key}><h4>{title}</h4><span className={`tag ${researchTone(layer.label)}`}>{layer.label === "unavailable" ? "暂无相关资讯" : directionText(layer.label)}</span>
@@ -487,6 +488,11 @@ function SentimentResearchCard({ data }: { data: Record<string, unknown> | null 
   const positiveTerms = stringList(data.positive_terms);
   const negativeTerms = stringList(data.negative_terms);
   return <ResearchInsightCard title="新闻情绪" caption="基于已获取资讯的文本统计"><div className={`research-direction ${researchTone(data.label)}`}><strong>{directionText(data.label)}</strong><span>情绪结论</span></div><ResearchMetricList metrics={[["情绪分数", formatResearchNumber(data.score)], ["已分析资讯", `${formatResearchNumber(data.articles)} 条`]]} />{(positiveTerms.length > 0 || negativeTerms.length > 0) && <div className="sentiment-terms">{positiveTerms.map((term) => <span className="tag positive" key={`positive-${term}`}>积极：{term}</span>)}{negativeTerms.map((term) => <span className="tag negative" key={`negative-${term}`}>消极：{term}</span>)}</div>}</ResearchInsightCard>;
+}
+
+function NewsModelBrief({ data }: { data: Record<string, unknown> | null }) {
+  if (!data || data.status !== "completed") return null;
+  return <section className="research-note"><strong>AI 个股新闻研判 · {directionText(data.sentiment)}</strong><p>{data.cached ? "复用未变化的新闻研判" : "已分析新增新闻"} · 置信度 {formatResearchPercent(Number(data.confidence) * 100)}</p>{stringList(data.material_events).map(item => <p key={item}>事件：{item}</p>)}{stringList(data.risks).map(item => <p key={item}>风险：{item}</p>)}<small>仅作新闻因子参考；最终行动仍须通过策略、仓位与个人纪律检查。</small></section>;
 }
 
 function FactorResearchCard({ data }: { data: Record<string, unknown> | null }) {
