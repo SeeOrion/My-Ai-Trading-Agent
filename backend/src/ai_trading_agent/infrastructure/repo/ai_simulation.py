@@ -174,6 +174,7 @@ class SqlAlchemyAiSimulationRepository:
                         "adverse_factor_count": item.adverse_factor_count,
                         "available_factor_ids": list(item.available_factor_ids),
                         "unavailable_factor_ids": list(item.unavailable_factor_ids),
+                        "research_notes": list(item.research_notes),
                         "blockers": list(item.blockers),
                     }
                     for item in run.decision_reports
@@ -285,6 +286,7 @@ def _run(record: AiSimulationRunRecord) -> AiSimulationRun:
         total_equity=None if record.total_equity is None else Decimal(str(record.total_equity)),
         decision_reports=tuple(
             AiSimulationDecisionReport(
+                research_notes=tuple(str(value) for value in item.get("research_notes", [])),
                 symbol=str(item["symbol"]),
                 display_name=None
                 if item.get("display_name") is None

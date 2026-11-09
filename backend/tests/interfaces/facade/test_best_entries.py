@@ -11,6 +11,15 @@ from ai_trading_agent.domain.aggregate.candidate import CandidateObservation, Ra
 from ai_trading_agent.domain.aggregate.market import Instrument
 from ai_trading_agent.domain.enums.market import Market
 from ai_trading_agent.interfaces.facade import ai_simulation as facade
+from ai_trading_agent.interfaces.facade import news_research
+
+
+@pytest.fixture(autouse=True)
+def mock_news(monkeypatch):
+    monkeypatch.setattr(news_research, "instrument_news_research", AsyncMock(return_value={
+        "scope": "instrument", "factor_eligible": False, "score": None,
+        "summary": "个股相关新闻不足，情绪因子暂缺。",
+    }))
 
 
 def candidate(symbol="600737.SH", *, observed_at=None):

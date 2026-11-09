@@ -47,7 +47,9 @@ class HithinkInstrumentIdentityProvider:
         row = _best_match(response_items(data), instrument)
         if row is None:
             return None
-        return InstrumentIdentity(instrument, str(row["name"]), self.name)
+        canonical = Instrument(str(row.get("thscode") or instrument.symbol), instrument.market,
+                               instrument.instrument_type, instrument.currency)
+        return InstrumentIdentity(canonical, str(row["name"]), self.name)
 
     async def search(
         self, query: str, *, asset_types: tuple[str, ...], limit: int

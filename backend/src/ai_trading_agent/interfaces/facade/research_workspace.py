@@ -388,18 +388,9 @@ async def research(query: ResearchRequest) -> ResearchResponse:
         notices.append("当前基本面与资金流适配器仅覆盖 A 股；港股/美股将显示行情与资讯。")
     if not _is_hithink_fund(instrument):
         try:
-            news = await latest_news(query.news_sources)
-            text = "\n".join(f"{item.title}\n{item.content}" for item in news)
-            if text:
-                sentiment = analyze_financial_sentiment(text)
-                news_sentiment = {
-                    "label": sentiment.label,
-                    "score": sentiment.score,
-                    "articles": len(news),
-                    "titles": [item.title for item in news],
-                    "positive_terms": list(sentiment.positive_terms),
-                    "negative_terms": list(sentiment.negative_terms),
-                }
+            from ai_trading_agent.interfaces.facade.news_research import instrument_news_research
+            news_sentiment = await instrument_news_research(instrument, query.news_sources)
+            notices.extend(news_sentiment.get("limitations", []))
         except Exception as error:
             notices.append(f"财经资讯情绪暂不可用：{error}")
     factor_analysis = await builtin_factor_analysis(
@@ -465,7 +456,7 @@ async def builtin_factor_analysis(
     sentiment_score = None
     sentiment_source = None
     if news_sentiment is not None:
-        raw_score = news_sentiment.get("score")
+        raw_score = news_sentiment.get("score") if news_sentiment.get("factor_eligible") or _is_hithink_fund(instrument) and "scope" not in news_sentiment else None
         try:
             sentiment_score = Decimal(str(raw_score)) if raw_score is not None else None
         except Exception:

@@ -135,3 +135,19 @@ def test_exit_plan_json_round_trip_preserves_decimals_and_http_contract():
     assert datetime.fromisoformat(response.pop("reviewed_at")) == plan.reviewed_at
     assert response == {key: value for key, value in payload.items() if key != "reviewed_at"}
     assert _exit_plan(None) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("eligible", [False, True])
+async def test_exit_only_retains_attributed_news_factor(monkeypatch, eligible):
+    _, position, quote, _ = state()
+    monkeypatch.setattr(facade, "historical_bars_provider", lambda instrument: SimpleNamespace(
+        get_daily_bars=AsyncMock(side_effect=RuntimeError("offline"))))
+    monkeypatch.setattr(facade, "research", AsyncMock(return_value=SimpleNamespace(
+        factor_analysis={"observations": [{"identifier": "news_sentiment", "direction": "adverse"}]},
+        capital_flow=None, fundamentals=None, notices=[],
+        news_sentiment={"factor_eligible": eligible, "summary": "分层情绪研究"},
+    )))
+    evidence, note = await facade._automatic_exit_evidence(position, quote, ())
+    assert (("news_sentiment", "adverse") in evidence.factor_directions) == eligible
+    assert "分层情绪研究" in note

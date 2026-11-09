@@ -212,7 +212,7 @@ async def _refresh_watchlist_analysis(
     )
 
     state = {
-        "version": 1,
+        "version": 2,
         "action": [action.status.value, str(action.price_level), str(action.max_position_pct)],
         "disciplines": {str(d.discipline.discipline_id): {
             "status": d.status.value, "definition": d.discipline.definition()
@@ -232,6 +232,8 @@ async def _refresh_watchlist_analysis(
         ),
     }
     state["signals"]["quote_available"] = quote is not None
+    for layer in ("instrument", "industry", "market"):
+        state["signals"][f"news_{layer}"] = (report.news_sentiment or {}).get(layer, {}).get("label")
     reason = summary_change_reason(existing.summary_state if existing else None, state)
     reuse = bool(existing and existing.ai_summary and not force_summary and reason is None)
     generated_at = existing.summary_generated_at if reuse else now
@@ -291,6 +293,13 @@ def _research_tags(
     news_sentiment: dict[str, object] | None,
 ) -> list[AnalysisTag]:
     tags: list[AnalysisTag] = []
+    if news_sentiment and news_sentiment.get("scope") == "instrument":
+        for key, title in (("instrument", "个股情绪"), ("industry", "行业情绪"), ("market", "大盘情绪")):
+            value = news_sentiment.get(key, {})
+            label = value.get("label", "unavailable")
+            display = {"positive": "积极", "negative": "消极", "neutral": "中性"}.get(label, "暂无相关资讯")
+            tags.append(AnalysisTag(f"sentiment_{key}", f"{title}：{display}", label if label in {"positive", "negative", "neutral"} else "info"))
+        news_sentiment = None
     if news_sentiment is not None and news_sentiment.get("label") is not None:
         label = str(news_sentiment["label"])
         mapping = {"positive": ("积极", "positive"), "negative": ("消极", "negative")}

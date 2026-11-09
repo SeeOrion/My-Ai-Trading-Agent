@@ -755,6 +755,7 @@ class AiSimulationPositionResponse(BaseModel):
 
 
 class AiSimulationDecisionResponse(BaseModel):
+    research_notes: list[str] = Field(default_factory=list)
     symbol: str
     display_name: str | None
     score: Decimal
@@ -802,6 +803,7 @@ class AiSimulationRunResponse(BaseModel):
                     adverse_factor_count=item.adverse_factor_count,
                     available_factor_ids=list(item.available_factor_ids),
                     unavailable_factor_ids=list(item.unavailable_factor_ids),
+                    research_notes=list(item.research_notes),
                     blockers=list(item.blockers),
                 )
                 for item in run.decision_reports
@@ -907,6 +909,7 @@ class AiSimulationOverviewResponse(BaseModel):
                     adverse_factor_count=item.adverse_factor_count,
                     available_factor_ids=list(item.available_factor_ids),
                     unavailable_factor_ids=list(item.unavailable_factor_ids),
+                    research_notes=list(item.research_notes),
                     blockers=list(item.blockers),
                 )
                 for item in overview.decision_reports

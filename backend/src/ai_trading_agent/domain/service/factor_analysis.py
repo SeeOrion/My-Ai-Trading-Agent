@@ -259,7 +259,7 @@ def _sentiment(
     meta: FactorMetadata, score: Decimal | None, source: str | None
 ) -> FactorObservation:
     if score is None:
-        return _unavailable(meta, "未采集到可供计算的财经资讯情绪。")
+        return _unavailable(meta, "近24小时直接相关资讯不足两条或归因不可用；不使用大盘情绪代替个股情绪。")
     direction = (
         "supportive"
         if score >= Decimal("0.2")
@@ -267,7 +267,7 @@ def _sentiment(
         if score <= Decimal("-0.2")
         else "neutral"
     )
-    return _observation(meta, score, "score", direction, "已采集财经资讯的可解释情绪均值。", source)
+    return _observation(meta, score, "score", direction, "近24小时直接相关资讯的匹配语句情绪均值；行业及宏观仅作背景。", source)
 
 
 def _price_return(current: Decimal, previous: Decimal) -> Decimal | None:

@@ -137,6 +137,7 @@ class AiSimulationDecisionReport:
     available_factor_ids: tuple[str, ...]
     unavailable_factor_ids: tuple[str, ...]
     blockers: tuple[str, ...]
+    research_notes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.decision not in {"buy", "skip", "already_held"}:

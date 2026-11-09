@@ -661,12 +661,25 @@ def _quote_is_current(quote: Quote, *, now: datetime | None = None) -> bool:
 async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
     """One read-only gate shared by overview recommendations and simulated buys."""
     observation = candidate.observation
+    from ai_trading_agent.interfaces.facade.news_research import instrument_news_research
+    news = None
+    news_note = "相关新闻暂不可用，新闻因子记为缺失；仍按其他因子与纪律复核。"
+    try:
+        news = await asyncio.wait_for(instrument_news_research(
+            observation.instrument,
+            ResearchRequest(symbol=observation.instrument.symbol, market=observation.instrument.market,
+                            instrument_type=observation.instrument.instrument_type).news_sources,
+        ), timeout=20)
+        news_note = str(news["summary"])
+    except Exception:
+        pass
     analysis = await builtin_factor_analysis(
         observation.instrument,
         financial_snapshot=None,
-        news_sentiment=None,
+        news_sentiment=news,
     )
     simulated = _candidate_from_analysis(candidate, analysis, strategies)
+    simulated = replace(simulated, rationale=(*simulated.rationale, news_note))
     decision = evaluate_simulated_entry(
         simulated,
         available_cash=portfolio.cash_balance,
@@ -1009,10 +1022,11 @@ async def _automatic_exit_evidence(
                 f"披露日期 {report.fundamentals.get('announced_on', '未提供')}。"
             )
         if report.news_sentiment:
-            details.append("已读取公开市场资讯情绪；未确认与个股及当日的关联，不单独作为卖出信号。")
-            factor_directions = tuple(
-                item for item in factor_directions if item[0] != "news_sentiment"
-            )
+            details.append(str(report.news_sentiment.get("summary", "资讯未完成个股归因，不作为卖出因子。")))
+            if not report.news_sentiment.get("factor_eligible"):
+                factor_directions = tuple(
+                    item for item in factor_directions if item[0] != "news_sentiment"
+                )
         notice = "；".join(filter(None, (notice, *details))) or None
     except Exception:
         notice = "；".join(
@@ -1163,6 +1177,7 @@ def _decision_report(
         available_factor_ids=candidate.available_factor_ids,
         unavailable_factor_ids=candidate.unavailable_factor_ids,
         blockers=decision.blockers,
+        research_notes=candidate.rationale,
     )
 
 
