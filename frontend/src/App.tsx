@@ -475,6 +475,15 @@ function CapitalFlowResearchCard({ data, isFund }: { data: Record<string, unknow
 
 function SentimentResearchCard({ data }: { data: Record<string, unknown> | null }) {
   if (!data) return <ResearchEmptyCard title="新闻情绪" />;
+  if (data.scope === "instrument") return <ResearchInsightCard title="分层新闻情绪" caption="近24小时已采集样本 · 关键词归因，不是全网舆情" wide>
+    <p>{String(data.summary ?? "")}</p>
+    <div className="research-insight-grid">{[["instrument", "个股情绪"], ["industry", "行业情绪"], ["market", "大盘情绪"]].map(([key, title]) => {
+      const layer = (data[key] ?? {}) as Record<string, unknown>;
+      return <section key={key}><h4>{title}</h4><span className={`tag ${researchTone(layer.label)}`}>{layer.label === "unavailable" ? "暂无相关资讯" : directionText(layer.label)}</span>
+        <ResearchMetricList metrics={[["相关新闻", `${formatResearchNumber(layer.articles)} 条`], ["文本情绪分", formatResearchNumber(layer.score)]]} />
+        <details><summary>查看匹配依据</summary>{recordList(layer.evidence).map((e, i) => <article key={i}><strong>{String(e.title)}</strong><p>{String(e.publisher)} · {String(e.published_at)}</p><p>匹配：{stringList(e.matched_terms).join("、")}</p><p>{String(e.excerpt ?? "")}</p></article>)}</details></section>;
+    })}</div>{stringList(data.limitations).map(note => <p className="research-note" key={note}>{note}</p>)}
+  </ResearchInsightCard>;
   const positiveTerms = stringList(data.positive_terms);
   const negativeTerms = stringList(data.negative_terms);
   return <ResearchInsightCard title="新闻情绪" caption="基于已获取资讯的文本统计"><div className={`research-direction ${researchTone(data.label)}`}><strong>{directionText(data.label)}</strong><span>情绪结论</span></div><ResearchMetricList metrics={[["情绪分数", formatResearchNumber(data.score)], ["已分析资讯", `${formatResearchNumber(data.articles)} 条`]]} />{(positiveTerms.length > 0 || negativeTerms.length > 0) && <div className="sentiment-terms">{positiveTerms.map((term) => <span className="tag positive" key={`positive-${term}`}>积极：{term}</span>)}{negativeTerms.map((term) => <span className="tag negative" key={`negative-${term}`}>消极：{term}</span>)}</div>}</ResearchInsightCard>;
@@ -798,9 +807,17 @@ function AiExitProtection({ position, currency }: { position: AiSimulationOvervi
 }
 
 function AiSimulationDecisionReports({ reports }: { reports: AiSimulationOverview["decision_reports"] }) {
-  const skipped = reports.filter((report) => report.decision === "skip");
-  if (!skipped.length) return null;
-  return <section className="panel ai-decision-panel"><div><p className="eyebrow">建仓检查清单</p><h2>本轮未建仓原因</h2><p className="muted">保留该账户最近一轮模拟的未建仓原因，直到下一轮自动或手动模拟结束后更新；刷新行情或页面不会清除。</p></div><div className="ai-decision-list">{skipped.map((report) => <article key={report.symbol}><div><strong>{report.symbol}{report.display_name ? ` · ${report.display_name}` : ""}</strong><small>评分 {report.score}/100 · 支持 {report.supportive_factor_count} · 逆风 {report.adverse_factor_count}</small></div>{report.blockers.map((blocker) => <p key={blocker}>{blocker}</p>)}{report.unavailable_factor_ids.length > 0 && <small>缺失因子：{report.unavailable_factor_ids.map(displayText).join("、")}</small>}</article>)}</div></section>;
+  if (!reports.length) return null;
+  return <section className="panel ai-decision-panel">
+    <h2>本轮决策与未建仓原因</h2><p className="muted">保留最近一轮的新闻研究、因子与纪律判断，直到下一轮自动或手动模拟完成；刷新行情不会清除。</p>
+    <div className="ai-decision-list">{reports.map(report => <article key={report.symbol}>
+      <strong>{report.symbol}{report.display_name ? ` · ${report.display_name}` : ""} · {report.decision === "buy" ? "模拟买入" : report.decision === "already_held" ? "已有持仓" : "未建仓"}</strong>
+      <p>评分 {report.score}/100 · 支持 {report.supportive_factor_count} · 逆风 {report.adverse_factor_count}</p>
+      {report.blockers.map(blocker => <p key={blocker}>{blocker}</p>)}
+      {(report.research_notes ?? []).map((note, index) => <p className="muted" key={index}>{note}</p>)}
+      {report.unavailable_factor_ids.length > 0 && <small>缺失因子：{report.unavailable_factor_ids.map(displayText).join("、")}</small>}
+    </article>)}</div>
+  </section>;
 }
 
 function PositionHoldingMetrics({ position, valuation }: { position: PaperPosition; valuation?: PaperPositionValuation }) {
