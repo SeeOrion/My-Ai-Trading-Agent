@@ -679,7 +679,7 @@ async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
             observation.instrument,
             ResearchRequest(symbol=observation.instrument.symbol, market=observation.instrument.market,
                             instrument_type=observation.instrument.instrument_type).news_sources,
-        ), timeout=20)
+        ), timeout=40)
         news_note = str(news["summary"])
     except Exception:
         pass
@@ -1002,7 +1002,7 @@ async def _automatic_exit_evidence(
                     instrument_type=position.instrument.instrument_type,
                 )
             ),
-            timeout=25,
+            timeout=45,
         )
         requested = set().union(*(s.factor_ids for s in strategies)) if strategies else None
         if report.factor_analysis:

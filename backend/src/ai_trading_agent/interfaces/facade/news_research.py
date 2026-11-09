@@ -108,7 +108,7 @@ async def _interpret_news(result, subject):
         return
     token = usage_feature.set("news_analysis")
     try:
-        settings = replace(OpenAICompatibleLLMSettings.from_environment(), timeout_seconds=6)
+        settings = replace(OpenAICompatibleLLMSettings.from_environment(), timeout_seconds=20)
         limit = max(0, min(60, int(os.environ.get("NEWS_LLM_MAX_CALLS_PER_HOUR", "12"))))
         brief = await _briefs.interpret(
             analyzer=OpenAICompatibleNewsAnalyzer(settings), model=settings.model,

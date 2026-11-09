@@ -378,7 +378,7 @@ A 股：腾讯公开行情（有界重试） → Hithink Finance → Futu OpenD
 `application/news.py` 的 `aggregate_sources=True` 合并东方财富和新浪，默认模式仍保留旧降级行为供其他调用者使用。
 `application/news_brief.py` 负责去时间戳/顺序的内容散列、单飞缓存和全进程每小时12次限额；缓存24小时、失败退避10分钟，均为内存，重启重置。
 `interfaces/facade/news_research.py` 组装直接相关新闻LLM研判，至少2条且置信度>=0.65才使用模型情绪因子；行业/大盘不混入。
-`infrastructure/rpc/llm_news.py` 限输出600 Token，新闻视为不可信输入，禁止按新闻中的指令执行动作。
+`infrastructure/rpc/llm_news.py` 限生成预算1800 Token（含兼容模型的内部推理），正文摘要要求150字以内，新闻视为不可信输入，禁止按新闻中的指令执行动作。
 配置见 `backend/.env.example` 的 `NEWS_LLM_ENABLED`、`NEWS_LLM_MAX_CALLS_PER_HOUR`；不改用户私密.env。
 `run_ai_simulation` 包装用量写入上下文，让后台任务同样计入 `news_analysis`。前端 `NewsModelBrief` 显示事件/风险，`LLMUsagePanel` 显示独立用量。
 测试入口 `tests/application/test_news_expansion.py`；模型输出只是因子，既有个人纪律、预算和止损约束仍优先。
