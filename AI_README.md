@@ -256,7 +256,7 @@ infrastructure (DB / external API / configuration adapters)
 | Hithink Finance | A 股快照/日 K/财务/估值、指数、板块、ETF、场外基金 | **hithink-finance Skill 的系统级私密凭据** | 场内 ETF 有真实行情与日线；场外基金是净值与定期披露 |
 | Tushare Pro | A 股日线、`daily_basic`、财务、资金流、扫描 | `TUSHARE_TOKEN` | 部分接口需积分/权限；日线不是盘中实时价 |
 | 腾讯公开行情 | A 股免费末级报价降级 | 不需 key | 实验性公开源，只作研究/展示，不作执行价格 |
-| AKShare | 公开财经资讯采集 | 不需 key | 上游网页可能变化/限流；由东方财富优先、Sina 降级、短时缓存处理 |
+| AKShare | 公开财经资讯采集 | 不需 key | 上游网页可能变化/限流；东方财富/Sina 并行合并、定向公开检索补充、短时缓存 |
 | LLM（兼容 Chat Completions） | AI 问答、资讯摘要、自选解读 | `LLM_API_KEY` 等 | 只能解释已有、明确标记来源的数据；不能绕过数据缺口编造事实 |
 
 ### A 股行情降级链路
@@ -373,7 +373,15 @@ A 股：腾讯公开行情（有界重试） → Hithink Finance → Futu OpenD
 `research_workspace.research` 展示分层结果；`assess_entry_candidate` 将个股分数送入因子，
 `_automatic_exit_evidence` 保留已归因且符合策略选择的新闻退出证据；不足两条近期去重标题时标记缺失。
 行业和大盘仅作研究背景，不能代替个股分数。候选 `research_notes` 随 `decision_reports` JSON 持久化，
-不需数据库迁移；旧记录默认空。自选摘要语义缓存版本 2 增加三层情绪状态，不新增定时 LLM 调用。
+不需数据库迁移；旧记录默认空。自选摘要语义缓存版本 2 增加三层情绪状态。
+公开新闻扩展：`infrastructure/rpc/public_news_search.py` 读取东方财富网站检索 JSONP（不使用登录凭据），每次最多三个关键词、每词30条，10分钟缓存、24小时时效。
+`application/news.py` 的 `aggregate_sources=True` 合并东方财富和新浪，默认模式仍保留旧降级行为供其他调用者使用。
+`application/news_brief.py` 负责去时间戳/顺序的内容散列、单飞缓存和全进程每小时12次限额；缓存24小时、失败退避10分钟，均为内存，重启重置。
+`interfaces/facade/news_research.py` 组装直接相关新闻LLM研判，至少2条且置信度>=0.65才使用模型情绪因子；行业/大盘不混入。
+`infrastructure/rpc/llm_news.py` 限输出600 Token，新闻视为不可信输入，禁止按新闻中的指令执行动作。
+配置见 `backend/.env.example` 的 `NEWS_LLM_ENABLED`、`NEWS_LLM_MAX_CALLS_PER_HOUR`；不改用户私密.env。
+`run_ai_simulation` 包装用量写入上下文，让后台任务同样计入 `news_analysis`。前端 `NewsModelBrief` 显示事件/风险，`LLMUsagePanel` 显示独立用量。
+测试入口 `tests/application/test_news_expansion.py`；模型输出只是因子，既有个人纪律、预算和止损约束仍优先。
 
 应用在 `interfaces/api/app.py` 的 lifespan 中创建任务，通用循环实现位于 `interfaces/task/market_scans.py`。
 
