@@ -108,7 +108,17 @@ async def create_simulation_account(app: FastAPI, request: AiSimulationRunReques
 
 
 async def run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> AiSimulationOverview:
-    return await _with_account_lock(app, request, _run_ai_simulation)
+    from ai_trading_agent.infrastructure.rpc.llm_usage import usage_sink
+    from ai_trading_agent.infrastructure.repo.llm_usage import SqlAlchemyLLMUsageRepository
+
+    async def persist_usage(event):
+        await SqlAlchemyLLMUsageRepository(private_session_factory(app)).record(event)
+
+    token = usage_sink.set(persist_usage)
+    try:
+        return await _with_account_lock(app, request, _run_ai_simulation)
+    finally:
+        usage_sink.reset(token)
 
 
 def _account_lock(app, key):

@@ -60,12 +60,14 @@ class ResilientLatestNewsHandler:
         cache_ttl: timedelta = timedelta(minutes=2),
         stale_if_error: timedelta = timedelta(minutes=10),
         clock: Callable[[], datetime] | None = None,
+        aggregate_sources: bool = False,
     ) -> None:
         if cache_ttl <= timedelta(0):
             raise ValueError("cache_ttl must be positive")
         if stale_if_error < cache_ttl:
             raise ValueError("stale_if_error must be at least cache_ttl")
         self._provider = provider
+        self._aggregate_sources = aggregate_sources
         self._cache_ttl = cache_ttl
         self._stale_if_error = stale_if_error
         self._clock = clock or (lambda: datetime.now(UTC))
@@ -94,10 +96,20 @@ class ResilientLatestNewsHandler:
             return cached_articles
 
         errors: list[str] = []
+        collected: list[NewsArticle] = []
+        prefetched = None
+        if self._aggregate_sources:
+            prefetched = dict(zip(normalized_sources, await asyncio.gather(*(
+                self._provider.fetch_latest(sources=(source,), lookback=lookback)
+                for source in normalized_sources
+            ), return_exceptions=True)))
         for source in normalized_sources:
             try:
+                response = prefetched[source] if prefetched is not None else await self._provider.fetch_latest(sources=(source,), lookback=lookback)
+                if isinstance(response, BaseException):
+                    raise response
                 articles = recent(deduplicate_articles(
-                    await self._provider.fetch_latest(sources=(source,), lookback=lookback)
+                    response
                 ))
             except Exception as error:
                 errors.append(f"{source}: {error}")
@@ -105,6 +117,16 @@ class ResilientLatestNewsHandler:
             if not articles:
                 errors.append(f"{source}: no recent articles")
                 continue
+            if self._aggregate_sources:
+                collected.extend(articles)
+                continue
+            if len(self._cache) >= 32 and key not in self._cache:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[key] = _CachedNews(tuple(articles), self._now())
+            return articles
+
+        if collected:
+            articles = deduplicate_articles(collected)
             if len(self._cache) >= 32 and key not in self._cache:
                 self._cache.pop(next(iter(self._cache)))
             self._cache[key] = _CachedNews(tuple(articles), self._now())

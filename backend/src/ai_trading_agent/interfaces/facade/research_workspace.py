@@ -108,7 +108,7 @@ _candidate_screen_cache: dict[
     tuple[Market, CandidateRanking, int], tuple[datetime, CandidateScreen]
 ] = {}
 _CANDIDATE_CACHE_TTL = timedelta(minutes=5)
-_news_collector = ResilientLatestNewsHandler(AkshareNewsProvider())
+_news_collector = ResilientLatestNewsHandler(AkshareNewsProvider(), aggregate_sources=True)
 
 
 async def latest_quote(instrument: Instrument) -> Quote:
