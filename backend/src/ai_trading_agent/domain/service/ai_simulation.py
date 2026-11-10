@@ -117,6 +117,7 @@ def evaluate_simulated_entry(
     max_positions: int,
     max_position_percent: Decimal,
     lot_size: Decimal,
+    minimum_score: Decimal = Decimal("65"),
 ) -> AiSimulationEntryDecision:
     """Return an allocation or explicit, user-facing reasons for keeping cash."""
     blockers: list[str] = []
@@ -129,8 +130,8 @@ def evaluate_simulated_entry(
     if candidate.last_price <= 0:
         blockers.append("最新行情价格无效，无法计算模拟买入数量。")
     observed_factor_count = len(candidate.available_factor_ids)
-    if candidate.score < Decimal("65"):
-        blockers.append(f"候选评分 {candidate.score}/100，低于均衡建仓阈值 65。")
+    if candidate.score < minimum_score:
+        blockers.append(f"候选评分 {candidate.score}/100，低于建仓阈值 {minimum_score}。")
     if observed_factor_count > 0 and candidate.supportive_factor_count < 2:
         blockers.append(
             f"支持因子仅 {candidate.supportive_factor_count} 项，未达到至少 2 项的证据要求。"
@@ -156,7 +157,7 @@ def evaluate_simulated_entry(
     # Scale exposure by the strength of observed evidence.  This deliberately
     # keeps a cash buffer: a barely-qualified score receives a smaller starter
     # position, while a strong but imperfect signal cannot consume the full cap.
-    score_component = min(Decimal("0.20"), (candidate.score - Decimal("65")) / Decimal("100"))
+    score_component = max(Decimal(0), min(Decimal("0.20"), (candidate.score - minimum_score) / Decimal("100")))
     factor_component = min(
         Decimal("0.20"),
         Decimal(candidate.supportive_factor_count - candidate.adverse_factor_count)
