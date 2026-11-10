@@ -30,6 +30,19 @@ class SqlAlchemyAiSimulationRepository:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
+    @classmethod
+    def within_transaction(cls, session):
+        class BoundSession:
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                return False
+            async def commit(self):
+                await session.flush()
+            def __getattr__(self, name):
+                return getattr(session, name)
+        return cls(lambda: BoundSession())
+
     async def get(self, portfolio_id: UUID) -> AiSimulationPortfolio | None:
         async with self._sessions() as session:
             record = await session.get(AiSimulationPortfolioRecord, str(portfolio_id))

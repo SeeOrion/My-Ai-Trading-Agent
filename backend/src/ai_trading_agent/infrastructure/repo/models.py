@@ -16,6 +16,26 @@ class Base(DeclarativeBase):
     pass
 
 
+class AgentAccountRecord(Base):
+    __tablename__ = "agent_accounts"
+    __table_args__ = {"schema": SCHEMA}
+    portfolio_id: Mapped[str] = mapped_column(String(36), ForeignKey(f"{SCHEMA}.ai_simulation_portfolios.portfolio_id"), primary_key=True)
+    generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    settings: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class AgentAuditRecord(Base):
+    __tablename__ = "agent_audits"
+    __table_args__ = {"schema": SCHEMA}
+    audit_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    portfolio_id: Mapped[str] = mapped_column(String(36), ForeignKey(f"{SCHEMA}.ai_simulation_portfolios.portfolio_id"), nullable=False, index=True)
+    position_id: Mapped[str | None] = mapped_column(String(36))
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
 class ClosingPriceCacheRecord(Base):
     __tablename__ = "closing_price_cache"
     __table_args__ = {"schema": SCHEMA}
