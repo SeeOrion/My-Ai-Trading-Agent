@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from ai_trading_agent.interfaces.model.agent import AgentSettings
 from ai_trading_agent.infrastructure.repo.llm_usage import SqlAlchemyLLMUsageRepository
 from ai_trading_agent.infrastructure.rpc.llm_usage import usage_sink, usage_feature
 from ai_trading_agent.interfaces.facade.persistence import private_session_factory
@@ -555,6 +556,32 @@ def create_app(
             raise HTTPException(
                 status_code=503, detail=f"AI 模拟组合估值不可用：{error}"
             ) from error
+
+    async def require_agent_account(portfolio_id):
+        account = await ai_simulation_repository(app).get(portfolio_id)
+        if account is None or account.status != "active":
+            raise HTTPException(status_code=404, detail="模拟账户不存在或已删除")
+        return account
+
+    @app.get("/api/v1/ai-simulation/accounts/{portfolio_id}/agent-settings", tags=["ai-simulation"])
+    async def get_agent_settings(portfolio_id: UUID):
+        await require_agent_account(portfolio_id)
+        from ai_trading_agent.interfaces.facade.research_agents import settings
+        generation, config = await settings(app, portfolio_id)
+        return {"generation": generation, "settings": config.model_dump(mode="json")}
+
+    @app.put("/api/v1/ai-simulation/accounts/{portfolio_id}/agent-settings", tags=["ai-simulation"])
+    async def put_agent_settings(portfolio_id: UUID, config: AgentSettings):
+        await require_agent_account(portfolio_id)
+        from ai_trading_agent.interfaces.facade.research_agents import repository
+        generation = await repository(app).save_config(portfolio_id, config.model_dump(mode="json"))
+        return {"generation": generation, "settings": config.model_dump(mode="json")}
+
+    @app.get("/api/v1/ai-simulation/accounts/{portfolio_id}/agent-audits", tags=["ai-simulation"])
+    async def get_agent_audits(portfolio_id: UUID):
+        await require_agent_account(portfolio_id)
+        from ai_trading_agent.interfaces.facade.research_agents import repository
+        return await repository(app).history(portfolio_id)
 
     @app.get("/api/v1/ai-simulation/accounts", tags=["ai-simulation"])
     async def list_simulation_accounts():

@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+from contextvars import ContextVar
 from dataclasses import replace
 from decimal import Decimal
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,7 @@ _subjects: dict[Instrument, tuple[datetime, NewsSubject]] = {}
 _subject_lock = asyncio.Lock()
 _search = PublicNewsSearch()
 _briefs = CachedNewsBriefs()
+skip_news_model = ContextVar("skip_news_model", default=False)
 
 
 async def news_subject(instrument: Instrument) -> NewsSubject:
@@ -103,6 +105,9 @@ async def instrument_news_research(instrument: Instrument, sources: list[str]) -
 
 
 async def _interpret_news(result, subject):
+    if skip_news_model.get():
+        result["llm_analysis"] = {"status": "handled_by_research_agent"}
+        return
     if os.environ.get("NEWS_LLM_ENABLED", "true").lower() != "true":
         result["llm_analysis"] = {"status": "disabled"}
         return

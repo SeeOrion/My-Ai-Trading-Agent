@@ -203,6 +203,10 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
     portfolio, positions, discipline_notices = await _apply_position_exits(
         app, repository, portfolio, positions, strategies
     )
+    # Baseline protections finish for EVERY position before optional model work.
+    from ai_trading_agent.interfaces.facade.research_agents import review_positions
+    portfolio, positions, agent_notices = await review_positions(app, repository, portfolio, positions, strategies)
+    discipline_notices = (*discipline_notices, *agent_notices)
     etf_notices = []
     if portfolio.account_type == "etf":
         screen, etf_notices = await etf_candidates(app)
@@ -260,68 +264,11 @@ async def _run_ai_simulation(app: FastAPI, request: AiSimulationRunRequest) -> A
         allocation = decision.allocation
         if allocation is None:
             continue
-        execution = estimate_simulated_execution(
-            side="buy",
-            reference_price=candidate.observation.last_price,
-            quantity=allocation.quantity,
-        )
-        position = AiSimulationPosition(
-            position_id=uuid4(),
-            portfolio_id=portfolio.portfolio_id,
-            instrument=candidate.observation.instrument,
-            quantity=allocation.quantity,
-            average_cost=execution.cash_required / allocation.quantity,
-            opened_at=datetime.now(UTC),
-            candidate_score=candidate.score,
-            factor_context=simulated_candidate.available_factor_ids
-            or ("因子暂缺，按已验证行情评估",),
-            rationale=tuple((*allocation.rationale, *execution.rationale)),
-            highest_price=execution.fill_price,
-        )
-        entry_evidence, entry_notes = await _automatic_exit_evidence(
-            position,
-            Quote(
-                instrument=position.instrument,
-                last_price=execution.fill_price,
-                observed_at=position.opened_at,
-                source=candidate.observation.source,
-            ),
-            strategies,
-        )
-        position = replace(
-            position,
-            exit_plan=review_exit_plan(
-                entry_evidence,
-                None,
-                position.opened_at,
-                data_notes=(() if entry_notes is None else (entry_notes,)),
-            ),
-        )
-        await repository.save_position(position)
-        await repository.save_trade(
-            AiSimulationTrade(
-                trade_id=uuid4(),
-                portfolio_id=portfolio.portfolio_id,
-                position_id=position.position_id,
-                side="buy",
-                quantity=position.quantity,
-                price=execution.fill_price,
-                executed_at=position.opened_at,
-                rationale=position.rationale,
-            )
-        )
-        portfolio = AiSimulationPortfolio(
-            portfolio_id=portfolio.portfolio_id,
-            market=portfolio.market,
-            currency=portfolio.currency,
-            initial_capital=portfolio.initial_capital,
-            cash_balance=portfolio.cash_balance - execution.cash_required,
-            max_positions=portfolio.max_positions,
-            strategy_ids=portfolio.strategy_ids,
-            discipline_ids=portfolio.discipline_ids,
-            account_type=portfolio.account_type,
-        )
-        portfolio = await repository.save_portfolio(portfolio)
+        from ai_trading_agent.interfaces.facade.research_agents import execute_buy
+        portfolio, position, final_blockers = await execute_buy(app, candidate, portfolio, strategies, simulated_candidate)
+        if position is None:
+            decision_reports[-1] = _decision_report(simulated_candidate, AiSimulationEntryDecision(None, final_blockers))
+            continue
         positions.append(position)
         existing_symbols.add(position.instrument.symbol)
         if len(positions) >= portfolio.max_positions:
@@ -669,6 +616,20 @@ def _quote_is_current(quote: Quote, *, now: datetime | None = None) -> bool:
 
 
 async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
+    from ai_trading_agent.interfaces.facade.news_research import skip_news_model
+    from ai_trading_agent.interfaces.facade.research_agents import buy_review
+    token = skip_news_model.set(True)
+    try:
+        simulated, decision = await _assess_entry_rules(app, candidate, portfolio, strategies, count, agent_entry=True)
+    finally:
+        skip_news_model.reset(token)
+    try:
+        return await buy_review(app, candidate, portfolio, strategies, count, simulated, decision)
+    except Exception:
+        return replace(simulated, rationale=(*simulated.rationale, "买入研究或审计不可用，暂缓新建仓。")), AiSimulationEntryDecision(None, (*decision.blockers, "买入研究或审计不可用"))
+
+
+async def _assess_entry_rules(app, candidate, portfolio, strategies, count, *, agent_entry=False):
     """One read-only gate shared by overview recommendations and simulated buys."""
     observation = candidate.observation
     from ai_trading_agent.interfaces.facade.news_research import instrument_news_research
@@ -688,6 +649,8 @@ async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
         financial_snapshot=None,
         news_sentiment=news,
     )
+    if analysis and agent_entry:
+        analysis = {**analysis, "observations": [f for f in analysis.get("observations", []) if f["identifier"] != "news_sentiment"]}
     simulated = _candidate_from_analysis(candidate, analysis, strategies)
     simulated = replace(simulated, rationale=(*simulated.rationale, news_note))
     decision = evaluate_simulated_entry(
@@ -698,6 +661,7 @@ async def assess_entry_candidate(app, candidate, portfolio, strategies, count):
         max_positions=portfolio.max_positions,
         max_position_percent=_max_position_percent(strategies),
         lot_size=minimum_trade_unit(observation.instrument),
+        minimum_score=Decimal("0") if agent_entry else Decimal("65"),
     )
     blockers = await _discipline_entry_blockers(app, candidate, portfolio.discipline_ids)
     quote = Quote(
@@ -752,7 +716,7 @@ async def best_entry_candidates(app: FastAPI, market: Market) -> dict[str, objec
                 return None, {"symbol": symbol, "reasons": ["已在模拟账户持有。"]}
             try:
                 simulated, decision = await asyncio.wait_for(
-                    assess_entry_candidate(app, candidate, portfolio, strategies, len(positions)),
+                    _assess_entry_rules(app, candidate, portfolio, strategies, len(positions)),
                     timeout=45,
                 )
             except Exception:
@@ -1162,6 +1126,7 @@ def _position_with_exit_state(
 def _exit_reason_label(reason_code: str) -> str:
     return {
         "personal_discipline": "个人纪律",
+        "agent_thesis_review": "持仓假设研究与规则审核",
         "hard_stop_loss": "退出计划风险保护",
         "first_profit_target": "退出计划首次盈利目标",
         "trailing_profit_stop": "ATR 移动盈利保护",

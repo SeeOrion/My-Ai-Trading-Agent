@@ -53,7 +53,7 @@ async def test_simulated_buy_receives_scoped_news_and_preserves_discipline_veto(
         ("test",),
     )
     portfolio = AiSimulationPortfolio(uuid4(), "a_share", "CNY", D(100000), D(100000), 3)
-    simulated, decision = await service.assess_entry_candidate(
+    simulated, decision = await service._assess_entry_rules(
         object(), candidate, portfolio, (), 0
     )
     assert factors.call_args.kwargs["news_sentiment"] == news

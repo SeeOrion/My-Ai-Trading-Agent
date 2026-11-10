@@ -95,7 +95,7 @@ async def test_shared_gate_reports_actual_rejection(monkeypatch, blocker):
         if blocker == "stale"
         else candidate()
     )
-    _, decision = await facade.assess_entry_candidate(object(), item, portfolio, (), 0)
+    _, decision = await facade._assess_entry_rules(object(), item, portfolio, (), 0)
     assert decision.allocation is None
     assert decision.blockers
 
@@ -107,7 +107,7 @@ async def test_missing_factors_are_not_automatically_a_rejection(monkeypatch):
         facade, "builtin_factor_analysis", AsyncMock(return_value=analysis("unavailable"))
     )
     monkeypatch.setattr(facade, "_discipline_entry_blockers", AsyncMock(return_value=()))
-    simulated, decision = await facade.assess_entry_candidate(
+    simulated, decision = await facade._assess_entry_rules(
         object(), candidate(), portfolio, (), 0
     )
     assert decision.allocation is not None
