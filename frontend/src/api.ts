@@ -1,4 +1,21 @@
 export type Market = "a_share" | "hong_kong" | "united_states" | "fund";
+export interface AgentSettings {
+  position_enabled: boolean; workflow_weight: string; research_weight: string;
+  entry_threshold: string; holding_days: number; validity_seconds: number; max_price_move: string;
+  rounds: number; tokens: number; timeout_seconds: number; repeated_queries: number;
+}
+export interface AgentAudit {
+  audit_id: string; symbol: string; kind: string; status: string; created_at: string; tokens: number;
+  report: null | { score: string; recommendation: string; thesis_state: string; thesis: {text: string};
+    support: Array<{text: string}>; opposition: Array<{text: string}>;
+    risks: Array<{text: string; severity: string; source_quote: string}>; data_gaps: string[];
+    dimensions: Record<string, {score: string; weight: string; text: string}> };
+  trace: Array<{tool: string; status: string; started_at: string; evidence?: {source: string; retrieved_at: string; data: string}}>;
+  rule_review: {action: string; blockers?: string[]; workflow_score?: string; research_score?: string; combined_score?: string};
+}
+export const fetchAgentSettings = (id: string) => request<{generation: number; settings: AgentSettings}>(`/api/v1/ai-simulation/accounts/${id}/agent-settings`);
+export const saveAgentSettings = (id: string, settings: AgentSettings) => request<{generation: number; settings: AgentSettings}>(`/api/v1/ai-simulation/accounts/${id}/agent-settings`, {method: "PUT", body: JSON.stringify(settings)});
+export const fetchAgentAudits = (id: string) => request<AgentAudit[]>(`/api/v1/ai-simulation/accounts/${id}/agent-audits`);
 export interface LLMUsageGroup {
   feature: string; model: string; status: string; events: number; unknown_usage: number;
   input_tokens: number | null; output_tokens: number | null; total_tokens: number | null;

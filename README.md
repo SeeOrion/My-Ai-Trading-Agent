@@ -204,3 +204,7 @@ frontend/                   # 独立 React 用户界面
 ```
 
 完整的边界和增量路线见 [docs/architecture.md](docs/architecture.md)。
+
+## 模拟交易研究升级
+
+模拟账户现支持固定买入研究 Agent 和默认关闭的持仓检验 Agent。配置入口在 AI 模拟账户设置中；说明、默认参数、迁移和验证方法见 [研究 Agent 文档](docs/research-agents.md)。所有动作仅作用于模拟账户。

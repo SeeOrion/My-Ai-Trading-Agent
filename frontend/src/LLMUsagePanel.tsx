@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchLLMUsage, LLMUsage } from "./api";
 
-const features: Record<string, string> = { news_analysis: "新闻研判", watchlist_auto: "自动摘要", watchlist_manual: "手动摘要", market_question: "市场问答", research: "其他研究" };
+const features: Record<string, string> = { buy_research_agent: "买入研究 Agent", position_review_agent: "持仓检验 Agent", news_analysis: "新闻研判", watchlist_auto: "自动摘要", watchlist_manual: "手动摘要", market_question: "市场问答", research: "其他研究" };
 const statuses: Record<string, string> = { success: "成功", failed: "失败", reused: "复用摘要" };
 const number = (value: number | null) => value === null ? "未报告" : value.toLocaleString("zh-CN");
 
@@ -32,6 +32,6 @@ export function LLMUsagePanel() {
       <div style={{ overflowX: "auto" }}><table><thead><tr><th>功能 / 模型</th><th>结果</th><th>次数</th><th>输入</th><th>输出</th><th>总量</th><th>缓存输入</th><th>推理</th></tr></thead><tbody>{groups.map((g, index) => <tr key={index}><td>{features[g.feature] ?? "其他研究"}<br />{g.model || "无需模型"}</td><td>{statuses[g.status] ?? g.status}</td><td>{g.events}</td>{([g.input_tokens, g.output_tokens, g.total_tokens, g.cached_tokens, g.reasoning_tokens]).map((v, i) => <td key={i}>{g.status === "reused" ? "—" : number(v)}</td>)}</tr>)}</tbody></table></div>
       {!groups.length && <p>尚无记录。统计从本次升级后开始，不回填历史账单。</p>}
     </>}
-    <p>缓存输入与推理 Token 是明细，不额外累加到总量。不保存提示词、回答正文或密钥；费用以服务商账单为准。</p>
+    <p>缓存输入与推理 Token 是明细，不额外累加到总量。用量表仅保存计数；研究审计另行保留结构化结论及证据，不保存密钥。费用以服务商账单为准。</p>
   </section>;
 }
