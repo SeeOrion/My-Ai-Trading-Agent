@@ -257,7 +257,7 @@ export interface AiSimulationRun { run_id: string; portfolio_id: string; market:
 export interface AiSimulationOverview { portfolio_id: string; discipline_ids: string[]; market: Market; currency: string; initial_capital: string; cash_balance: string; invested_cost: string; market_value: string; total_equity: string; cumulative_pnl: string; daily_pnl: string | null; month_to_date_pnl: string | null; max_positions: number; strategy_ids: string[]; observed_at: string; positions: AiSimulationPosition[]; notices: string[]; decision_reports: AiSimulationDecision[]; }
 
 export interface PositionExitPlan { stop_price: string; target_price: string; reviewed_at: string; action: string; basis: string[]; data_notes: string[]; version: string; }
-export interface AiSimulationPosition { exit_plan?: PositionExitPlan | null; }
+export interface AiSimulationPosition { buy_price?: string | null; first_profit_sell_quantity?: string; exit_plan?: PositionExitPlan | null; }
 export interface BestEntries {
   market: Market; refreshed_at: string; universe_size: number; coverage: string; account_basis: string;
   candidates: Array<{ symbol: string; name: string | null; price: string; score: string; observed_at: string; source: string; reasons: string[]; missing_factors: string[]; supportive: number; adverse: number; }>;

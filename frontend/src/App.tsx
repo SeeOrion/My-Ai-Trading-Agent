@@ -810,7 +810,23 @@ function AiSimulationOverviewView({ overview, onOpenSettings, onRun, running }: 
 function AiExitProtection({ position, currency }: { position: AiSimulationOverview["positions"][number]; currency: string }) {
   const plan = position.exit_plan;
   const actions: Record<string, string> = { hold: "继续观察", partial_exit: "分批止盈", full_exit: "退出", discipline_hold: "遵守个人纪律", settlement_hold: "当日买入，等待可卖日" };
-  return <section className="ai-exit-protection"><strong>动态卖出计划 · {plan ? actions[plan.action] ?? "观察" : "等待下一次复核建档"}</strong><div><span>风险保护价 {formatPositionNumber(position.hard_stop_price)} {currency}</span><span>首次止盈价 {formatPositionNumber(position.first_profit_target_price)} {currency}</span><span>持仓高水位 {formatPositionNumber(position.highest_price)} {currency}</span><span>{position.profit_take_stage > 0 ? "已分批止盈" : "等待首次止盈"}</span>{position.trailing_stop_price !== null && <span>移动保护 {formatPositionNumber(position.trailing_stop_price)} {currency}</span>}</div>{plan && <><small>复核于 {new Date(plan.reviewed_at).toLocaleString()}</small><ul>{plan.basis.map((reason, index) => <li key={index}>{reason}</li>)}</ul>{plan.data_notes.length > 0 && <details><summary>数据依据与缺失提示</summary>{plan.data_notes.map((note, index) => <p key={index}>{note}</p>)}</details>}</>}<small>个人纪律优先，以上自动保护价在存在适用纪律时仅作参考。价格是触发条件，并非保证成交价；仅在有效交易时段定时复核，不是逐笔监控，不保证收益。</small></section>;
+  const unit = position.instrument_type === "equity" ? "股" : "份";
+  const qty = formatPositionNumber(position.quantity);
+  const takeQty = formatPositionNumber(position.first_profit_sell_quantity ?? "0");
+  const disciplined = plan?.action === "discipline_hold";
+  const crossed = position.last_price !== null && (Number(position.last_price) <= Number(position.hard_stop_price) || (position.profit_take_stage === 0 && Number(position.last_price) >= Number(position.first_profit_target_price)) || (position.profit_take_stage > 0 && position.trailing_stop_price !== null && Number(position.last_price) <= Number(position.trailing_stop_price)));
+  return <section className="ai-exit-protection">
+    <p><strong>买入成交均价：{position.buy_price == null ? "成交记录暂不可用" : `${formatPositionNumber(position.buy_price)} ${currency}`}</strong> · 含费用平均成本：{formatPositionNumber(position.average_cost)} {currency}</p>
+    <p className="muted">买入价来自模拟成交记录，已包含成交滑点；平均成本另计模拟费用。</p>
+    <h4>{disciplined ? "自动卖出参考（当前由个人纪律接管）" : "价格与卖出数量"}</h4>
+    <ul>
+      <li>止损：有效报价 ≤ <strong>{formatPositionNumber(position.hard_stop_price)} {currency}</strong>，卖出全部 <strong>{qty} {unit}</strong>。</li>
+      {position.profit_take_stage === 0 ? <li>首次止盈：有效报价 ≥ <strong>{formatPositionNumber(position.first_profit_target_price)} {currency}</strong>，卖出 <strong>{takeQty} {unit}</strong>；剩余仓位转入移动保护。</li> : <li>首次止盈已执行，不再按首次目标重复卖出。</li>}
+      {position.profit_take_stage > 0 && position.trailing_stop_price !== null ? <li>移动止盈：有效报价 ≤ <strong>{formatPositionNumber(position.trailing_stop_price)} {currency}</strong>，卖出剩余 <strong>{qty} {unit}</strong>；保护线会随复核调整。</li> : <li>移动止盈：首次止盈后启用，具体保护价在复核后显示。</li>}
+      <li>趋势退出：跌破 20 日均线且至少两项技术风险确认时，卖出剩余全部；没有固定触发价。</li>
+    </ul>
+    {crossed && !disciplined && <p className="notice">页面估值已达到价格条件，等待有效交易时段重新获取报价并审核。刷新估值不会执行卖出，不能据此认定已经成交。</p>}
+    <strong>动态卖出计划 · {plan ? actions[plan.action] ?? "观察" : "等待下一次复核建档"}</strong><div><span>风险保护价 {formatPositionNumber(position.hard_stop_price)} {currency}</span><span>首次止盈价 {formatPositionNumber(position.first_profit_target_price)} {currency}</span><span>持仓高水位 {formatPositionNumber(position.highest_price)} {currency}</span><span>{position.profit_take_stage > 0 ? "已分批止盈" : "等待首次止盈"}</span>{position.trailing_stop_price !== null && <span>移动保护 {formatPositionNumber(position.trailing_stop_price)} {currency}</span>}</div>{plan && <><small>复核于 {new Date(plan.reviewed_at).toLocaleString()}</small><ul>{plan.basis.map((reason, index) => <li key={index}>{reason}</li>)}</ul>{plan.data_notes.length > 0 && <details><summary>数据依据与缺失提示</summary>{plan.data_notes.map((note, index) => <p key={index}>{note}</p>)}</details>}</>}<small>个人纪律优先，以上自动保护价在存在适用纪律时仅作参考。价格是触发条件，并非保证成交价；仅在有效交易时段定时复核，不是逐笔监控，不保证收益。</small></section>;
 }
 
 function AiSimulationDecisionReports({ reports }: { reports: AiSimulationOverview["decision_reports"] }) {
