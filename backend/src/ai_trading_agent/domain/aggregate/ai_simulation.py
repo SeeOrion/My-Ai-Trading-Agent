@@ -122,6 +122,7 @@ class AiSimulationPositionValuation:
     daily_pnl: Decimal | None
     month_to_date_pnl: Decimal | None
     source: str | None
+    buy_price: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

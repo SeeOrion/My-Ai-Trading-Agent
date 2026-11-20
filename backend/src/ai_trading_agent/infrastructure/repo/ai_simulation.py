@@ -27,6 +27,19 @@ from ai_trading_agent.infrastructure.repo.models import (
 
 
 class SqlAlchemyAiSimulationRepository:
+    async def buy_prices(self, portfolio_id):
+        """Quantity-weighted executed buy prices, excluding separately booked fees."""
+        from sqlalchemy import func
+        async with self._sessions() as session:
+            rows = await session.execute(select(
+                AiSimulationTradeRecord.position_id,
+                func.sum(AiSimulationTradeRecord.price * AiSimulationTradeRecord.quantity)
+                / func.sum(AiSimulationTradeRecord.quantity),
+            ).where(AiSimulationTradeRecord.portfolio_id == str(portfolio_id),
+                    AiSimulationTradeRecord.side == "buy")
+             .group_by(AiSimulationTradeRecord.position_id))
+            return {UUID(identifier): price for identifier, price in rows if identifier}
+
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 

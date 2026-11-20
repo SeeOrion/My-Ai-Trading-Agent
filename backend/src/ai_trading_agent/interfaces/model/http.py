@@ -727,6 +727,8 @@ class PositionExitPlanResponse(BaseModel):
 
 
 class AiSimulationPositionResponse(BaseModel):
+    buy_price: Decimal | None = None
+    first_profit_sell_quantity: Decimal = Decimal("0")
     position_id: UUID
     symbol: str
     display_name: str | None
@@ -836,6 +838,7 @@ class AiSimulationOverviewResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, overview: AiSimulationOverview) -> AiSimulationOverviewResponse:
+        from ai_trading_agent.domain.service.simulated_execution import minimum_trade_unit, quantity_for_partial_exit
         portfolio = overview.portfolio
         return cls(
             portfolio_id=portfolio.portfolio_id,
@@ -856,6 +859,8 @@ class AiSimulationOverviewResponse(BaseModel):
             observed_at=overview.observed_at.isoformat(),
             positions=[
                 AiSimulationPositionResponse(
+                    buy_price=item.buy_price,
+                    first_profit_sell_quantity=(quantity_for_partial_exit(item.position.quantity, minimum_trade_unit(item.position.instrument)) if item.position.profit_take_stage == 0 else Decimal("0")),
                     position_id=item.position.position_id,
                     symbol=item.position.instrument.symbol,
                     display_name=item.display_name,

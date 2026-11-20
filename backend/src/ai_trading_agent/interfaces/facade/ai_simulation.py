@@ -472,12 +472,13 @@ async def ai_simulation_overview(app: FastAPI, market: Market, *, close_only: bo
         raise ValueError("部分持仓收盘价尚不可用；已保留之前显示的估值，请稍后重试。")
     by_id = {item.position.position_id: item for item in paper_overview.valuations}
     display_names = await _display_names(positions)
+    buy_prices = await repository.buy_prices(portfolio.portfolio_id) if positions else {}
     valued_positions = tuple(
-        _position_valuation(
+        replace(_position_valuation(
             position,
             by_id.get(position.position_id),
             display_names.get(position.position_id),
-        )
+        ), buy_price=buy_prices.get(position.position_id))
         for position in positions
     )
     summary = next(
