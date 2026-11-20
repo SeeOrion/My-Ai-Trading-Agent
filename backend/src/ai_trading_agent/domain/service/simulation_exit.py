@@ -272,6 +272,11 @@ def review_exit_plan(
         basis.append("当日资金净流出且至少两项技术因子转弱，收紧保护至现价下方 3%。")
     if evidence.previous_trailing_stop is not None:
         stop = max(stop, evidence.previous_trailing_stop)
+    if evidence.profit_take_stage == 1:
+        trailing = _trailing_stop_price(evidence, max(evidence.highest_price, evidence.current_price))
+        if trailing is not None:
+            stop = max(stop, trailing)
+            basis.append(f"本轮按最新高水位与波动更新移动保护至 {trailing:.4f}，保护线只收紧不放宽。")
     return PositionExitPlan(stop, target, reviewed_at, basis=tuple(basis), data_notes=data_notes)
 
 

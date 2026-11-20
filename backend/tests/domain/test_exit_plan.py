@@ -68,3 +68,15 @@ def test_rising_volatility_cannot_lower_existing_trailing_stop():
     )
     assert decision.trailing_stop_price == D("124")
     assert decision.action == "hold"
+
+
+def test_review_updates_protection_using_current_high_in_same_cycle():
+    initial = review_exit_plan(evidence(), None, NOW)
+    current = evidence(current_price=D("140"), highest_price=D("130"),
+                       profit_take_stage=1, previous_trailing_stop=D("120"), atr_14=D("3"))
+    updated = review_exit_plan(current, initial, NOW)
+    assert updated.stop_price == D("133")
+    assert updated.target_price == initial.target_price
+    later = review_exit_plan(replace(current, current_price=D("138"), highest_price=D("140"),
+                                    atr_14=D("10"), previous_trailing_stop=D("133")), updated, NOW)
+    assert later.stop_price == D("133")
